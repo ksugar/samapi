@@ -1,4 +1,6 @@
-# SAM API
+# Segment Anything Models (SAM) API
+
+A web API for [SAM](https://github.com/facebookresearch/segment-anything) implemented with [FastAPI](https://fastapi.tiangolo.com).
 
 ## Install
 
