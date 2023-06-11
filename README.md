@@ -11,22 +11,22 @@ conda create -n samapi -y python=3.11
 conda activate samapi
 ```
 
-Install `cudatoolkit`.
+If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
 
 ```bash
 conda install -y cudatoolkit=11.3
-```
-
-Install `samapi` and its dependencies.
-
-```bash
-python -m pip install git+https://github.com/ksugar/samapi.git
 ```
 
 If you are using WSL2, `LD_LIBRARY_PATH` will need to be updated as follows.
 
 ```bash
 export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
+```
+
+Install `samapi` and its dependencies.
+
+```bash
+python -m pip install git+https://github.com/ksugar/samapi.git
 ```
 
 ## Usage
