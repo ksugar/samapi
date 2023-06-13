@@ -14,19 +14,27 @@ conda activate samapi
 If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
 
 ```bash
-conda install -y cudatoolkit=11.3
+conda install -y cudatoolkit=11.8
 ```
 
-If you are using WSL2, `LD_LIBRARY_PATH` will need to be updated as follows.
+If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support here.
 
 ```bash
-export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
+# Windows with CUDA-compatible GPU only
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu118
 ```
 
 Install `samapi` and its dependencies.
 
 ```bash
 python -m pip install git+https://github.com/ksugar/samapi.git
+```
+```
+
+If you are using WSL2, `LD_LIBRARY_PATH` will need to be updated as follows.
+
+```bash
+export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
 ```
 
 ## Usage
