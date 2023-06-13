@@ -68,3 +68,7 @@ class SAMBody(BaseModel):
 The response body contains a list of [GeoJSON Feature objects](https://geojson.org).
 
 Supporting other formats is a future work.
+
+## Updates
+
+- v0.2.0: Support for MPS backend (MacOS) by @petebankhead
