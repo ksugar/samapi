@@ -41,8 +41,15 @@ def _get_device() -> str:
     """
     if torch.cuda.is_available():
         return "cuda"
-    elif torch.backends.mps.is_built() and torch.backends.mps.is_built():
-        return "mps"
+    elif torch.backends.mps.is_built():
+        if torch.backends.mps.is_available():
+            return "mps"
+        else:
+            warnings.warn(
+                "MPS not available because the current MacOS version is not "
+                "12.3+ and/or you do not have an MPS-enabled device on this "
+                "machine."
+            )
     else:
         warnings.warn("No GPU support found - using CPU for inference")
         return "cpu"
