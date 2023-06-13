@@ -29,7 +29,6 @@ Install `samapi` and its dependencies.
 ```bash
 python -m pip install git+https://github.com/ksugar/samapi.git
 ```
-```
 
 If you are using WSL2, `LD_LIBRARY_PATH` will need to be updated as follows.
 
