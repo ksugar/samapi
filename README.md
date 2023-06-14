@@ -1,6 +1,13 @@
 # Segment Anything Models (SAM) API
 
+![](https://github.com/ksugar/samapi/releases/download/assets/qupath-samapi.gif)
+
 A web API for [SAM](https://github.com/facebookresearch/segment-anything) implemented with [FastAPI](https://fastapi.tiangolo.com).
+
+This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite [the original SAM paper](https://arxiv.org/abs/2304.02643).
+
+- Sugawara, K. [*Training deep learning models for cell image segmentation with sparse annotations.*](https://biorxiv.org/cgi/content/short/2023.06.13.544786v1) bioRxiv 2023. doi:10.1101/2023.06.13.544786
+
 
 ## Install
 
@@ -17,7 +24,7 @@ If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
 conda install -y cudatoolkit=11.8
 ```
 
-If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support here.
+If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support with the following command.
 
 ```bash
 # Windows with CUDA-compatible GPU only
@@ -78,4 +85,23 @@ Supporting other formats is a future work.
 
 ## Updates
 
-- v0.2.0: Support for MPS backend (MacOS) by @petebankhead
+- v0.2.0: Support for MPS backend (MacOS) by [@petebankhead](https://github.com/petebankhead)
+
+## Citation
+
+Please cite my paper on [bioRxiv](https://biorxiv.org/cgi/content/short/2023.06.13.544786v1).
+
+```.bib
+@article {Sugawara2023.06.13.544786,
+	author = {Ko Sugawara},
+	title = {Training deep learning models for cell image segmentation with sparse annotations},
+	elocation-id = {2023.06.13.544786},
+	year = {2023},
+	doi = {10.1101/2023.06.13.544786},
+	publisher = {Cold Spring Harbor Laboratory},
+	abstract = {Deep learning is becoming more prominent in cell image analysis. However, collecting the annotated data required to train efficient deep-learning models remains a major obstacle. I demonstrate that functional performance can be achieved even with sparsely annotated data. Furthermore, I show that the selection of sparse cell annotations significantly impacts performance. I modified Cellpose and StarDist to enable training with sparsely annotated data and evaluated them in conjunction with ELEPHANT, a cell tracking algorithm that internally uses U-Net based cell segmentation. These results illustrate that sparse annotation is a generally effective strategy in deep learning-based cell image segmentation. Finally, I demonstrate that with the help of the Segment Anything Model (SAM), it is feasible to build an effective deep learning model of cell image segmentation from scratch just in a few minutes.Competing Interest StatementKS is employed part-time by LPIXEL Inc.},
+	URL = {https://www.biorxiv.org/content/early/2023/06/13/2023.06.13.544786},
+	eprint = {https://www.biorxiv.org/content/early/2023/06/13/2023.06.13.544786.full.pdf},
+	journal = {bioRxiv}
+}
+```
