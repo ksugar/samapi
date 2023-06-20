@@ -34,30 +34,47 @@ SAM_CHECKPOINTS = {
     ),
 }
 
+
 def _get_device() -> str:
     """
     Selects the device to use for inference, based on what is available.
     :return:
     """
+    device = "cpu"
     if torch.cuda.is_available():
-        return "cuda"
+        device = "cuda"
     elif torch.backends.mps.is_built():
         if torch.backends.mps.is_available():
-            return "mps"
+            device = "mps"
         else:
             warnings.warn(
                 "MPS not available because the current MacOS version is not "
                 "12.3+ and/or you do not have an MPS-enabled device on this "
-                "machine."
+                "machine - using CPU for inference"
             )
     else:
         warnings.warn("No GPU support found - using CPU for inference")
-        return "cpu"
+
+    # Make sure that the device is ready
+    if device in ("cuda", "mps"):
+        try:
+            dummy_input = np.zeros((16, 16, 3), dtype=np.uint8)
+            SamPredictor(get_sam_model(ModelType.vit_b).to(device=device)).set_image(
+                dummy_input
+            )
+        except Exception as e:
+            warnings.warn(
+                f"{device} device found but got the error {str(e)} - using CPU for inference"
+            )
+            device = "cpu"
+    return device
+
 
 def get_sam_model(model_type: ModelType):
     sam = sam_model_registry[model_type]()
     sam.load_state_dict(SAM_CHECKPOINTS[model_type])
     return sam
+
 
 device = _get_device()
 predictor = SamPredictor(get_sam_model(ModelType.vit_h).to(device=device))
