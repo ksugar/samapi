@@ -79,38 +79,82 @@ def get_sam_model(model_type: ModelType):
 device = _get_device()
 predictor = SamPredictor(get_sam_model(ModelType.vit_h).to(device=device))
 sam_type = ModelType.vit_h
+last_image = None
 
 
 class SAMBody(BaseModel):
     type: Optional[ModelType] = ModelType.vit_h
-    bbox: Tuple[int, int, int, int] = Field(example=(0, 0, 0, 0))
+    bbox: Optional[Tuple[int, int, int, int]] = Field(example=(0, 0, 0, 0))
+    point_coords: Optional[Tuple[Tuple[int, int], ...]] = Field(example=((0, 0), (1, 0)))
+    point_labels: Optional[Tuple[int, ...]] = Field(example=(0, 1))
     b64img: str
+    b64mask: Optional[str] = None
+    multimask_output: bool = False
 
 
 @app.post("/sam/")
 async def predict_sam(body: SAMBody):
     global sam_type
     global predictor
+    global last_image
     if body.type != sam_type:
         predictor = SamPredictor(get_sam_model(body.type).to(device=device))
         sam_type = body.type
-    image = decode_image(body.b64img)
-    if image.ndim == 2:
-        image = np.stack((image,) * 3, axis=-1)
-    predictor.set_image(image)
-    masks, _, _ = predictor.predict(
-        point_coords=None,
-        point_labels=None,
-        box=np.array(body.bbox)[None],
-        multimask_output=False,
+        last_image = None
+    if last_image != body.b64img:
+        image = _parse_image(body)
+        predictor.set_image(image)
+        last_image = body.b64img
+    else:
+        print('Keeping the previous image!')
+
+    print(f'Coords: {_parse_point_coords(body).shape if body.point_coords else None}')
+    print(f'Labels: {_parse_point_labels(body).shape if body.point_labels else None}')
+    import time
+    start_time = time.time_ns()
+    masks, quality, _ = predictor.predict(
+        point_coords=_parse_point_coords(body),
+        point_labels=_parse_point_labels(body),
+        box=_parse_bbox(body),
+        mask_input=_parse_mask(body),
+        multimask_output=body.multimask_output,
     )
+    end_time = time.time_ns()
+    print(f'Prediction time: {(end_time - start_time) / 1e6:.1f} ms')
+
     features = []
     for obj_int, mask in enumerate(masks):
         index_number = int(obj_int - 1)
         features.append(
             Feature(
                 geometry=mask_to_geometry(mask),
-                properties={"object_idx": index_number, "label": "object"},
+                properties={"object_idx": index_number,
+                            "label": "object",
+                            "quality": float(quality[index_number]),
+                            "sam_model": body.type},
             )
         )
     return features
+
+
+def _parse_image(body: SAMBody):
+    image = decode_image(body.b64img)
+    if image.ndim == 2:
+        image = np.stack((image,) * 3, axis=-1)
+    return image
+
+
+def _parse_mask(body: SAMBody):
+    return None if body.b64mask is None else decode_image(body.b64mask)
+
+
+def _parse_bbox(body: SAMBody):
+    return None if not body.bbox else np.array(body.bbox)[None]
+
+
+def _parse_point_labels(body: SAMBody):
+    return None if not body.point_labels else np.array(body.point_labels)
+
+
+def _parse_point_coords(body: SAMBody):
+    return None if not body.point_coords else np.array(body.point_coords)
