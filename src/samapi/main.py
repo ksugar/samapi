@@ -77,8 +77,8 @@ def get_sam_model(model_type: ModelType):
 
 
 device = _get_device()
-predictor = SamPredictor(get_sam_model(ModelType.vit_h).to(device=device))
 sam_type = ModelType.vit_h
+predictor = SamPredictor(get_sam_model(sam_type).to(device=device))
 last_image = None
 
 
@@ -108,8 +108,6 @@ async def predict_sam(body: SAMBody):
     else:
         print('Keeping the previous image!')
 
-    print(f'Coords: {_parse_point_coords(body).shape if body.point_coords else None}')
-    print(f'Labels: {_parse_point_labels(body).shape if body.point_labels else None}')
     import time
     start_time = time.time_ns()
     masks, quality, _ = predictor.predict(
