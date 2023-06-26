@@ -1,13 +1,13 @@
 import warnings
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Optional, List, Tuple
 
 from fastapi import FastAPI
 from geojson import Feature
 import numpy as np
 from pydantic import BaseModel
 from pydantic import Field
-from segment_anything import sam_model_registry, SamPredictor
+from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 from torch.hub import load_state_dict_from_url
 import torch
 
@@ -77,7 +77,7 @@ def get_sam_model(model_type: ModelType):
 
 
 device = _get_device()
-predictor = SamPredictor(get_sam_model(ModelType.vit_h).to(device=device))
+sam = get_sam_model(ModelType.vit_h).to(device=device)
 sam_type = ModelType.vit_h
 
 
@@ -90,10 +90,11 @@ class SAMBody(BaseModel):
 @app.post("/sam/")
 async def predict_sam(body: SAMBody):
     global sam_type
-    global predictor
+    global sam
     if body.type != sam_type:
-        predictor = SamPredictor(get_sam_model(body.type).to(device=device))
+        sam = get_sam_model(body.type).to(device=device)
         sam_type = body.type
+    predictor = SamPredictor(sam)
     image = decode_image(body.b64img)
     if image.ndim == 2:
         image = np.stack((image,) * 3, axis=-1)
@@ -110,6 +111,59 @@ async def predict_sam(body: SAMBody):
         features.append(
             Feature(
                 geometry=mask_to_geometry(mask),
+                properties={"object_idx": index_number, "label": "object"},
+            )
+        )
+    return features
+
+
+class SAMAutoMaskBody(BaseModel):
+    type: Optional[ModelType] = ModelType.vit_h
+    b64img: str
+    points_per_side: Optional[int] = 32
+    points_per_batch: int = 64
+    pred_iou_thresh: float = 0.88
+    stability_score_thresh: float = 0.95
+    stability_score_offset: float = 1.0
+    box_nms_thresh: float = 0.7
+    crop_n_layers: int = 0
+    crop_nms_thresh: float = 0.7
+    crop_overlap_ratio: float = 512 / 1500
+    crop_n_points_downscale_factor: int = 1
+    min_mask_region_area: int = 0
+
+
+@app.post("/sam/automask/")
+async def automatic_mask_generator(body: SAMAutoMaskBody):
+    global sam_type
+    global sam
+    if body.type != sam_type:
+        sam = get_sam_model(body.type).to(device=device)
+        sam_type = body.type
+    mask_generator = SamAutomaticMaskGenerator(
+        model=sam,
+        points_per_side=body.points_per_side,
+        points_per_batch=body.points_per_batch,
+        pred_iou_thresh=body.pred_iou_thresh,
+        stability_score_thresh=body.stability_score_thresh,
+        stability_score_offset=body.stability_score_offset,
+        box_nms_thresh=body.box_nms_thresh,
+        crop_n_layers=body.crop_n_layers,
+        crop_nms_thresh=body.crop_nms_thresh,
+        crop_overlap_ratio=body.crop_overlap_ratio,
+        crop_n_points_downscale_factor=body.crop_n_points_downscale_factor,
+        min_mask_region_area=body.min_mask_region_area,
+    )
+    image = decode_image(body.b64img)
+    if image.ndim == 2:
+        image = np.stack((image,) * 3, axis=-1)
+    masks = mask_generator.generate(image)
+    features = []
+    for obj_int, mask in enumerate(masks):
+        index_number = int(obj_int - 1)
+        features.append(
+            Feature(
+                geometry=mask_to_geometry(mask["segmentation"]),
                 properties={"object_idx": index_number, "label": "object"},
             )
         )
