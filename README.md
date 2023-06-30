@@ -64,6 +64,8 @@ For more information, see [uvicorn documentation](https://www.uvicorn.org/#comma
 
 ### Request body
 
+#### Endpoint `/sam/`
+
 ```python
 class SAMBody(BaseModel):
     type: Optional[ModelType] = ModelType.vit_h
@@ -76,6 +78,43 @@ class SAMBody(BaseModel):
 | type   | One of `vit_h`, `vit_l`, or `vit_b`     |
 | bbox   | Coordinate of a bbox `(x1, y1, x2, y2)` |
 | b64img | Base64-encoded image data               |
+
+#### Endpoint `/sam/automask/`
+
+```python
+class SAMAutoMaskBody(BaseModel):
+    type: Optional[ModelType] = ModelType.vit_h
+    b64img: str
+    points_per_side: Optional[int] = 32
+    points_per_batch: int = 64
+    pred_iou_thresh: float = 0.88
+    stability_score_thresh: float = 0.95
+    stability_score_offset: float = 1.0
+    box_nms_thresh: float = 0.7
+    crop_n_layers: int = 0
+    crop_nms_thresh: float = 0.7
+    crop_overlap_ratio: float = 512 / 1500
+    crop_n_points_downscale_factor: int = 1
+    min_mask_region_area: int = 0
+```
+
+| key                            | value                                                                                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| type                           | One of `vit_h`, `vit_l`, or `vit_b`.                                                                                                                                            |
+| b64img                         | Base64-encoded image data.                                                                                                                                                      |
+| points_per_side                | The number of points to be sampled along one side of the image.  The total number of points is points_per_side**2.                                                              |
+| points_per_batch               | Sets the number of points run simultaneously by the model. Higher numbers may be faster but use more GPU memory.                                                                |
+| pred_iou_thresh                | A filtering threshold in [0,1], using the model's predicted mask quality.                                                                                                       |
+| stability_score_thresh         | A filtering threshold in [0,1], using the stability of the mask under changes to the cutoff used to binarize the model's mask predictions.                                      |
+| stability_score_offset         | The amount to shift the cutoff when calculated the stability score.                                                                                                             |
+| box_nms_thresh                 | The box IoU cutoff used by non-maximal suppression to filter duplicate masks.                                                                                                   |
+| crop_n_layers                  | If >0, mask prediction will be run again on crops of the image. Sets the number of layers to run, where each layer has 2**i_layer number of image crops.                        |
+| crop_nms_thresh                | The box IoU cutoff used by non-maximal suppression to filter duplicate masks between different crops.                                                                           |
+| crop_overlap_ratio             | Sets the degree to which crops overlap. In the first crop layer, crops will overlap by this fraction of the image length. Later layers with more crops scale down this overlap. |
+| crop_n_points_downscale_factor | The number of points-per-side sampled in layer n is scaled down by crop_n_points_downscale_factor**n.                                                                           |
+| min_mask_region_area           | If >0, postprocessing will be applied to remove disconnected regions and holes in masks with area smaller than min_mask_region_area. Requires opencv.                           |
+
+- [point_grids](https://github.com/facebookresearch/segment-anything/blob/6fdee8f2727f4506cfbbe553e23b895e27956588/segment_anything/automatic_mask_generator.py#L86-L88) is not supported.
 
 ### Response body
 
