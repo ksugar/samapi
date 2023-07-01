@@ -168,9 +168,6 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
         sam = get_sam_model(sam_type).to(device=device)
         sam_type = body.type
         last_image = None
-    if last_image != body.b64img:
-        image = _parse_image(body)
-        last_image = body.b64img
 
     mask_generator = SamAutomaticMaskGenerator(
         model=sam,
@@ -187,6 +184,7 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
         min_mask_region_area=body.min_mask_region_area,
     )
 
+    image = _parse_image(body)
     start_time = time.time_ns()
     masks = mask_generator.generate(image)
     end_time = time.time_ns()
