@@ -102,7 +102,7 @@ class SAMAutoMaskBody(BaseModel):
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | type                           | One of `vit_h`, `vit_l`, or `vit_b`.                                                                                                                                            |
 | b64img                         | Base64-encoded image data.                                                                                                                                                      |
-| points_per_side                | The number of points to be sampled along one side of the image.  The total number of points is points_per_side**2.                                                              |
+| points_per_side                | The number of points to be sampled along one side of the image. The total number of points is points_per_side**2.                                                               |
 | points_per_batch               | Sets the number of points run simultaneously by the model. Higher numbers may be faster but use more GPU memory.                                                                |
 | pred_iou_thresh                | A filtering threshold in [0,1], using the model's predicted mask quality.                                                                                                       |
 | stability_score_thresh         | A filtering threshold in [0,1], using the stability of the mask under changes to the cutoff used to binarize the model's mask predictions.                                      |
