@@ -8,7 +8,7 @@ from geojson import Feature
 import numpy as np
 from pydantic import BaseModel
 from pydantic import Field
-from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+from mobile_sam import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 from torch.hub import load_state_dict_from_url
 import torch
 
@@ -21,6 +21,7 @@ class ModelType(str, Enum):
     vit_h = "vit_h"
     vit_l = "vit_l"
     vit_b = "vit_b"
+    vit_t = "vit_t"
 
 
 SAM_CHECKPOINTS = {
@@ -32,6 +33,9 @@ SAM_CHECKPOINTS = {
     ),
     ModelType.vit_b: load_state_dict_from_url(
         "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+    ),
+    ModelType.vit_t: load_state_dict_from_url(
+        "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt",
     ),
 }
 
