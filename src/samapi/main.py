@@ -104,7 +104,7 @@ async def predict_sam(body: SAMBody):
     global predictor
     global last_image
     if body.type != sam_type:
-        sam = get_sam_model(sam_type).to(device=device)
+        sam = get_sam_model(body.type).to(device=device)
         predictor = SamPredictor(sam)
         sam_type = body.type
         last_image = None
@@ -165,7 +165,7 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     global sam
     global last_image
     if body.type != sam_type:
-        sam = get_sam_model(sam_type).to(device=device)
+        sam = get_sam_model(body.type).to(device=device)
         sam_type = body.type
         last_image = None
 
