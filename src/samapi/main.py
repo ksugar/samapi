@@ -84,8 +84,7 @@ def get_sam_model(model_type: ModelType):
 device = _get_device()
 
 sam_type = ModelType.vit_h
-sam = get_sam_model(sam_type).to(device=device)
-predictor = SamPredictor(sam)
+predictor = SamPredictor(get_sam_model(sam_type).to(device=device))
 last_image = None
 
 
@@ -104,12 +103,10 @@ class SAMBody(BaseModel):
 @app.post("/sam/")
 async def predict_sam(body: SAMBody):
     global sam_type
-    global sam
     global predictor
     global last_image
     if body.type != sam_type:
-        sam = get_sam_model(body.type).to(device=device)
-        predictor = SamPredictor(sam)
+        predictor = SamPredictor(get_sam_model(body.type).to(device=device))
         sam_type = body.type
         last_image = None
     if last_image != body.b64img:
@@ -161,20 +158,28 @@ class SAMAutoMaskBody(BaseModel):
     crop_overlap_ratio: float = 512 / 1500
     crop_n_points_downscale_factor: int = 1
     min_mask_region_area: int = 0
+    output_type: str = "Single Mask"
+    include_image_edge: bool = False
 
 
 @app.post("/sam/automask/")
 async def automatic_mask_generator(body: SAMAutoMaskBody):
     global sam_type
-    global sam
+    global predictor
     global last_image
     if body.type != sam_type:
-        sam = get_sam_model(body.type).to(device=device)
+        predictor = SamPredictor(get_sam_model(body.type).to(device=device))
         sam_type = body.type
         last_image = None
+    if last_image != body.b64img:
+        image = _parse_image(body)
+        predictor.set_image(image)
+        last_image = body.b64img
+    else:
+        print("Keeping the previous image!")
 
     mask_generator = SamAutomaticMaskGenerator(
-        model=sam,
+        predictor=predictor,
         points_per_side=body.points_per_side,
         points_per_batch=body.points_per_batch,
         pred_iou_thresh=body.pred_iou_thresh,
@@ -186,6 +191,8 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
         crop_overlap_ratio=body.crop_overlap_ratio,
         crop_n_points_downscale_factor=body.crop_n_points_downscale_factor,
         min_mask_region_area=body.min_mask_region_area,
+        output_type=body.output_type,
+        include_image_edge=body.include_image_edge,
     )
 
     image = _parse_image(body)
