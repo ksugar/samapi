@@ -4,7 +4,7 @@
 
 A web API for [SAM](https://github.com/facebookresearch/segment-anything) implemented with [FastAPI](https://fastapi.tiangolo.com).
 
-This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite [the original SAM paper](https://arxiv.org/abs/2304.02643).
+This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite [the original SAM paper](https://arxiv.org/abs/2304.02643) and [the MobileSAM paper](https://arxiv.org/abs/2306.14289).
 
 - Sugawara, K. [*Training deep learning models for cell image segmentation with sparse annotations.*](https://biorxiv.org/cgi/content/short/2023.06.13.544786v1) bioRxiv 2023. doi:10.1101/2023.06.13.544786
 
@@ -48,6 +48,7 @@ export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
 ### Launch a server
 
 ```bash
+export PYTORCH_ENABLE_MPS_FALLBACK=1 # Required for running on Apple silicon
 uvicorn samapi.main:app
 ```
 
@@ -64,6 +65,8 @@ For more information, see [uvicorn documentation](https://www.uvicorn.org/#comma
 
 ### Request body
 
+#### Endpoint `/sam/`
+
 ```python
 class SAMBody(BaseModel):
     type: Optional[ModelType] = ModelType.vit_h
@@ -76,6 +79,47 @@ class SAMBody(BaseModel):
 | type   | One of `vit_h`, `vit_l`, or `vit_b`     |
 | bbox   | Coordinate of a bbox `(x1, y1, x2, y2)` |
 | b64img | Base64-encoded image data               |
+
+#### Endpoint `/sam/automask/`
+
+```python
+class SAMAutoMaskBody(BaseModel):
+    type: Optional[ModelType] = ModelType.vit_h
+    b64img: str
+    points_per_side: Optional[int] = 32
+    points_per_batch: int = 64
+    pred_iou_thresh: float = 0.88
+    stability_score_thresh: float = 0.95
+    stability_score_offset: float = 1.0
+    box_nms_thresh: float = 0.7
+    crop_n_layers: int = 0
+    crop_nms_thresh: float = 0.7
+    crop_overlap_ratio: float = 512 / 1500
+    crop_n_points_downscale_factor: int = 1
+    min_mask_region_area: int = 0
+    output_type: str = "Single Mask"
+    include_image_edge: bool = False
+```
+
+| key                            | value                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| type                           | One of `vit_h`, `vit_l`, or `vit_b`.                                                                                                                                                                                                                                                                                                        |
+| b64img                         | Base64-encoded image data.                                                                                                                                                                                                                                                                                                                  |
+| points_per_side                | The number of points to be sampled along one side of the image. The total number of points is points_per_side**2.                                                                                                                                                                                                                           |
+| points_per_batch               | Sets the number of points run simultaneously by the model. Higher numbers may be faster but use more GPU memory.                                                                                                                                                                                                                            |
+| pred_iou_thresh                | A filtering threshold in [0,1], using the model's predicted mask quality.                                                                                                                                                                                                                                                                   |
+| stability_score_thresh         | A filtering threshold in [0,1], using the stability of the mask under changes to the cutoff used to binarize the model's mask predictions.                                                                                                                                                                                                  |
+| stability_score_offset         | The amount to shift the cutoff when calculated the stability score.                                                                                                                                                                                                                                                                         |
+| box_nms_thresh                 | The box IoU cutoff used by non-maximal suppression to filter duplicate masks.                                                                                                                                                                                                                                                               |
+| crop_n_layers                  | If >0, mask prediction will be run again on crops of the image. Sets the number of layers to run, where each layer has 2**i_layer number of image crops.                                                                                                                                                                                    |
+| crop_nms_thresh                | The box IoU cutoff used by non-maximal suppression to filter duplicate masks between different crops.                                                                                                                                                                                                                                       |
+| crop_overlap_ratio             | Sets the degree to which crops overlap. In the first crop layer, crops will overlap by this fraction of the image length. Later layers with more crops scale down this overlap.                                                                                                                                                             |
+| crop_n_points_downscale_factor | The number of points-per-side sampled in layer n is scaled down by crop_n_points_downscale_factor**n.                                                                                                                                                                                                                                       |
+| min_mask_region_area           | If >0, postprocessing will be applied to remove disconnected regions and holes in masks with area smaller than min_mask_region_area. Requires opencv.                                                                                                                                                                                       |
+| output_type                    | If 'Single Mask' is selected, the model will return single masks per prompt. If 'Multi-mask' is selected, the model will return three masks per prompt. 'Multi-mask (all)' keeps all three masks. One of the three masks is kept if the option 'Multi-mask (largest)', 'Multi-mask (smallest)', or 'Multi-mask (best quality)' is selected. |
+| include_image_edge             | If True, include a crop area at the edge of the original image.                                                                                                                                                                                                                                                                             |
+
+- [point_grids](https://github.com/facebookresearch/segment-anything/blob/6fdee8f2727f4506cfbbe553e23b895e27956588/segment_anything/automatic_mask_generator.py#L86-L88) is not supported.
 
 ### Response body
 
@@ -105,3 +149,9 @@ Please cite my paper on [bioRxiv](https://biorxiv.org/cgi/content/short/2023.06.
 	journal = {bioRxiv}
 }
 ```
+
+## Acknowledgements
+
+- [segment-anything](https://github.com/facebookresearch/segment-anything)
+- [MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
+- [FastAPI](https://fastapi.tiangolo.com)
