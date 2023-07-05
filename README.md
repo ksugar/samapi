@@ -45,6 +45,14 @@ If you are using WSL2, `LD_LIBRARY_PATH` will need to be updated as follows.
 export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
 ```
 
+## Update
+
+If you want to update the samapi server, run the following command in the conda environment.
+
+```bash
+python -m pip install -U git+https://github.com/ksugar/samapi.git
+```
+
 ## Usage
 
 ### Launch a server
