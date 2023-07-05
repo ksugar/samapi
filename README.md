@@ -1,6 +1,8 @@
 # Segment Anything Models (SAM) API
 
-![](https://github.com/ksugar/samapi/releases/download/assets/qupath-samapi.gif)
+<img src="https://github.com/ksugar/samapi/releases/download/assets/qupath-samapi.gif" width="768">
+
+<img src="https://github.com/ksugar/samapi/releases/download/assets/qupath-sam-multipoint-live.gif" width="768">
 
 A web API for [SAM](https://github.com/facebookresearch/segment-anything) implemented with [FastAPI](https://fastapi.tiangolo.com).
 
@@ -129,7 +131,26 @@ Supporting other formats is a future work.
 
 ## Updates
 
-- v0.2.0: Support for MPS backend (MacOS) by [@petebankhead](https://github.com/petebankhead)
+### v0.3.0
+
+- Support points and multi-mask output by [@petebankhead](https://github.com/petebankhead)
+  
+  <img src="https://github.com/ksugar/samapi/releases/download/assets/qupath-sam-multipoint.gif" width="768">
+
+  <img src="https://github.com/ksugar/samapi/releases/download/assets/qupath-sam-rectangle-prompt.gif" width="768">
+
+- Support SamAutomaticMaskGenerator
+  
+  <img src="https://github.com/ksugar/samapi/releases/download/assets/qupath-sam-automask.gif" width="768">
+
+- Support [MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
+  
+- Add opencv-python to dependencies
+
+
+### v0.2.0
+
+- Support for MPS backend (MacOS) by [@petebankhead](https://github.com/petebankhead)
 
 ## Citation
 
