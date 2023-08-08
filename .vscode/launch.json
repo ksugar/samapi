@@ -15,7 +15,10 @@
                 "--reload"
             ],
             "jinja": true,
-            "justMyCode": false
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${PYTHONPATH}:/home/sugawara/MobileSAM/"
+            }
         }
     ]
 }
