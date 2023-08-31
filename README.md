@@ -23,14 +23,14 @@ conda activate samapi
 If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
 
 ```bash
-conda install -y cudatoolkit=11.7
+conda install -c conda-forge -y cudatoolkit=11.7
 ```
 
 If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support with the following command.
 
 ```bash
 # Windows with CUDA-compatible GPU only
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu117
+python -m pip install "torch>=1.13.1,<2.0" torchvision --index-url https://download.pytorch.org/whl/cu117
 ```
 
 Install `samapi` and its dependencies.
