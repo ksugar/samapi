@@ -16,21 +16,21 @@ This is a part of the following paper. Please [cite](#citation) it when you use 
 Create a conda environment.
 
 ```bash
-conda create -n samapi -y python=3.11
+conda create -n samapi -y python=3.10
 conda activate samapi
 ```
 
 If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
 
 ```bash
-conda install -y cudatoolkit=11.8
+conda install -c conda-forge -y cudatoolkit=11.7
 ```
 
 If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support with the following command.
 
 ```bash
 # Windows with CUDA-compatible GPU only
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu118
+python -m pip install "torch>=1.13.1,<2.0" torchvision --index-url https://download.pytorch.org/whl/cu117
 ```
 
 Install `samapi` and its dependencies.
