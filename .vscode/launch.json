@@ -17,7 +17,7 @@
             "jinja": true,
             "justMyCode": false,
             "env": {
-                "PYTHONPATH": "${PYTHONPATH}:/home/sugawara/MobileSAM/"
+                "PYTORCH_ENABLE_MPS_FALLBACK": "1"
             }
         }
     ]
