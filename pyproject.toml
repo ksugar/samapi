@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "samapi"
-version = "0.3.1"
+version = "0.4.0"
 description = "Segment Anything Model (SAM) API"
 authors = ["Ko Sugawara <ko.sugawara@ens-lyon.fr>"]
 readme = "README.md"
