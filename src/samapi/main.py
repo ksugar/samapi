@@ -44,7 +44,7 @@ class ProgressIO(TextIOWrapper):
         super().__init__(sys.__stderr__.buffer, encoding=sys.__stderr__.encoding)
 
     def write(self, s: str):
-        with open(SAMAPI_STDERR, "w") as f:
+        with open(SAMAPI_STDERR, "w", encoding="utf-8") as f:
             f.write(s)
         super().write(s)
 
