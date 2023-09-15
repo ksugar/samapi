@@ -1,49 +1,127 @@
-import warnings
+"""
+This is a main.py file for the FastAPI app.
+"""
+from contextlib import redirect_stderr
 from enum import Enum
+from io import TextIOWrapper
+import json
+import logging
+import os
+from pathlib import Path
+import sys
 import time
-from typing import Optional, List, Tuple
+from typing import Any, Optional, Tuple
+import warnings
 
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from geojson import Feature
 import numpy as np
 from pydantic import BaseModel
 from pydantic import Field
 from mobile_sam import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
-from torch.hub import load_state_dict_from_url
 import torch
 
+from samapi import __version__
+from samapi.hub_extension import load_state_dict_from_url
 from samapi.utils import decode_image, mask_to_geometry
+
+logger = logging.getLogger("uvicorn")
+
+SAMAPI_ROOT_DIR = os.getenv("SAMAPI_ROOT_DIR", str(Path.home() / ".samapi"))
+
+
+SAMAPI_STDERR = SAMAPI_ROOT_DIR + "/samapi.stderr"
+SAMAPI_CANCEL_FILE = SAMAPI_ROOT_DIR + "/samapi.cancel"
+
+
+class ProgressIO(TextIOWrapper):
+    """
+    For progress bar, we need to redirect stderr to a file.
+    """
+
+    def __init__(self):
+        super().__init__(sys.__stderr__.buffer, encoding=sys.__stderr__.encoding)
+
+    def write(self, s: str):
+        with open(SAMAPI_STDERR, "w", encoding="utf-8") as f:
+            f.write(s)
+        super().write(s)
+
+
+progress_io = ProgressIO()
+
+
+class EndpointFilter(logging.Filter):
+    """
+    To filter out the log messages from specified FastAPI endpoints.
+    Reference: https://github.com/encode/starlette/issues/864#issuecomment-1254987630
+    """
+
+    def __init__(
+        self,
+        path: str,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        super().__init__(*args, **kwargs)
+        self._path = path
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find(self._path) == -1
+
+
+uvicorn_logger = logging.getLogger("uvicorn.access")
+uvicorn_logger.addFilter(EndpointFilter(path="/sam/progress/"))
+uvicorn_logger.addFilter(EndpointFilter(path="/sam/weights/cancel/"))
 
 app = FastAPI()
 
 
 class ModelType(str, Enum):
+    """
+    Model types.
+    """
+
     vit_h = "vit_h"
     vit_l = "vit_l"
     vit_b = "vit_b"
     vit_t = "vit_t"
 
 
-SAM_CHECKPOINTS = {
-    ModelType.vit_h: load_state_dict_from_url(
-        "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
-    ),
-    ModelType.vit_l: load_state_dict_from_url(
-        "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
-    ),
-    ModelType.vit_b: load_state_dict_from_url(
-        "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
-    ),
-    ModelType.vit_t: load_state_dict_from_url(
-        "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt",
-    ),
+DEFAULT_CHECKPOINT_URLS = {
+    ModelType.vit_h: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+    ModelType.vit_l: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+    ModelType.vit_b: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+    ModelType.vit_t: "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt",
 }
+
+
+def get_sam_model(model_type: ModelType, checkpoint_url: Optional[str] = None):
+    """
+    Returns a SAM model.
+    :param model_type: Model type.
+    :param checkpoint_url: Checkpoint URL.
+    :return: SAM model.
+    """
+    sam = sam_model_registry[model_type]()
+    if checkpoint_url is None:
+        checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
+    sam.load_state_dict(
+        load_state_dict_from_url(
+            url=checkpoint_url,
+            model_dir=str(Path(SAMAPI_ROOT_DIR) / model_type.name),
+            cancel_filepath=SAMAPI_CANCEL_FILE,
+            map_location=torch.device("cpu"),
+        )[0]
+    )
+    return sam
 
 
 def _get_device() -> str:
     """
     Selects the device to use for inference, based on what is available.
-    :return:
+    :return: device as str
     """
     device = "cpu"
     if torch.cuda.is_available():
@@ -75,20 +153,193 @@ def _get_device() -> str:
     return device
 
 
-def get_sam_model(model_type: ModelType):
-    sam = sam_model_registry[model_type]()
-    sam.load_state_dict(SAM_CHECKPOINTS[model_type])
-    return sam
-
-
 device = _get_device()
 
-sam_type = ModelType.vit_h
-predictor = SamPredictor(get_sam_model(sam_type).to(device=device))
+
+def register_state_dict_from_url(model_type: ModelType, url: str, name: str) -> bool:
+    """
+    Registers a state dict from URL.
+    :param model_type: Model type.
+    :param url: URL.
+    :param name: Name.
+    :return: True if registered successfully, False otherwise.
+    """
+    model_dir = Path(SAMAPI_ROOT_DIR) / model_type.name
+    if os.path.exists(SAMAPI_CANCEL_FILE):
+        os.remove(SAMAPI_CANCEL_FILE)
+    try:
+        with redirect_stderr(progress_io):
+            _, filepath = load_state_dict_from_url(
+                url=url,
+                model_dir=str(model_dir),
+                cancel_filepath=SAMAPI_CANCEL_FILE,
+                map_location=torch.device(device),
+            )
+    except RuntimeError as e:
+        if os.path.exists(SAMAPI_CANCEL_FILE):
+            os.remove(SAMAPI_CANCEL_FILE)
+            return False
+        else:
+            raise e
+    finally:
+        if os.path.exists(SAMAPI_CANCEL_FILE):
+            os.remove(SAMAPI_CANCEL_FILE)
+    json_file = model_dir / f"{Path(filepath).stem}.json"
+    with open(json_file, "w", encoding="utf-8") as f:
+        json.dump({"type": model_type, "name": name, "url": url}, f)
+    return True
+
+
+def _register_default_weights():
+    """
+    Registers default weights.
+    """
+    for model_type, checkpoint_url in DEFAULT_CHECKPOINT_URLS.items():
+        register_state_dict_from_url(model_type, checkpoint_url, f"default")
+
+
+# Registers default weights at startup.
+_register_default_weights()
+
+# global variables
+last_sam_type = ModelType.vit_h
+last_checkpoint_url = None
+predictor = SamPredictor(get_sam_model(model_type=last_sam_type).to(device=device))
 last_image = None
 
 
+@app.get("/sam/version/", response_class=PlainTextResponse)
+async def get_version():
+    """
+    Returns the version of the SAM API.
+    :return: Version of the SAM API.
+    """
+    return __version__
+
+
+class SAMWeightsBody(BaseModel):
+    """
+    SAM weights body.
+    """
+
+    type: ModelType
+    name: str
+    url: str
+
+
+def _get_weights_at(p_model_dir: Path, remove_orphans: bool = True):
+    """
+    Returns a list of the available weights at the given path.
+    :param p_model_dir: Path to the model directory.
+    :param remove_orphans: Whether to remove orphan files.
+    :return: A list of weights.
+    """
+    if not p_model_dir.exists():
+        logger.warning(f"{p_model_dir} does not exist.")
+        return []
+    paths = (p for p in p_model_dir.iterdir() if p.suffix != ".json")
+    weights = []
+    for p in sorted(paths, key=os.path.getmtime):
+        p_json = p.parent / f"{p.stem}.json"
+        if p_json.exists():
+            with open(p_json, encoding="utf-8") as file:
+                metadata = json.load(file)
+            weights.append(
+                {
+                    "type": metadata["type"],
+                    "name": metadata["name"],
+                    "url": metadata["url"],
+                }
+            )
+        else:
+            logger.warning(
+                f"{p_json} is not found. {'Remove' if remove_orphans else 'Skip'} {p}."
+            )
+            if remove_orphans:
+                p.unlink()
+    return weights
+
+
+@app.get("/sam/weights/")
+async def get_weights(type: Optional[ModelType] = None):
+    """
+    Returns a list of the available weights.
+    :param type: Model type.
+    :return: A list of weights.
+    """
+    weights = []
+    if type is not None:
+        return _get_weights_at(Path(SAMAPI_ROOT_DIR) / type.name)
+    else:
+        for model_type in ModelType:
+            weights.extend(_get_weights_at(Path(SAMAPI_ROOT_DIR) / model_type.name))
+    return weights
+
+
+@app.post("/sam/weights/", response_class=PlainTextResponse)
+async def register_weights(body: SAMWeightsBody):
+    """
+    Registers SAM weights.
+    :param body: SAM weights body.
+    :return: A message indicating whether the registration is successful.
+    """
+    weights = _get_weights_at(Path(SAMAPI_ROOT_DIR) / body.type.name)
+    for weight in weights:
+        if weight["name"] == body.name:
+            message = f"Model file with the name '{body.name}' already exists. Skip registration."
+            logger.warning(message)
+            break
+        if weight["url"] == body.url:
+            message = f"Model file with the url '{body.url}' already exists. Skip registration."
+            logger.warning(message)
+            break
+    else:
+        registered = register_state_dict_from_url(body.type, body.url, body.name)
+        if registered:
+            message = f"{body.name} ({body.url}) is registered."
+        else:
+            message = f"Cancelled to register {body.name} ({body.url})."
+        logger.info(message)
+    return message
+
+
+@app.get("/sam/weights/cancel/", response_class=PlainTextResponse)
+async def cancel_download():
+    """
+    Cancels the download.
+    :return: A message indicating that the cancel signal is sent.
+    """
+    if os.path.exists(SAMAPI_CANCEL_FILE):
+        os.remove(SAMAPI_CANCEL_FILE)
+    with open(SAMAPI_CANCEL_FILE, "w", encoding="utf-8") as f:
+        f.write("cancel")
+    return "Cancel signal sent"
+
+
+@app.get("/sam/progress/")
+async def get_progress():
+    """
+    Returns the progress.
+    :return: The progress.
+    """
+    with open(SAMAPI_STDERR, encoding="utf-8") as f:
+        result = f.read()
+        if "| " in result:
+            message = result.split("| ")[-1]
+        else:
+            message = None
+        if "%" in result:
+            percent = int(result.split("%")[0].split(" ")[-1])
+        else:
+            percent = -1
+        return {"message": message, "percent": percent}
+
+
 class SAMBody(BaseModel):
+    """
+    SAM body.
+    """
+
     type: Optional[ModelType] = ModelType.vit_h
     bbox: Optional[Tuple[int, int, int, int]] = Field(example=(0, 0, 0, 0))
     point_coords: Optional[Tuple[Tuple[int, int], ...]] = Field(
@@ -98,23 +349,32 @@ class SAMBody(BaseModel):
     b64img: str
     b64mask: Optional[str] = None
     multimask_output: bool = False
+    checkpoint_url: Optional[str] = None
 
 
 @app.post("/sam/")
 async def predict_sam(body: SAMBody):
-    global sam_type
+    """
+    Predicts SAM with prompts.
+    :param body: SAM body.
+    """
+    global last_sam_type
+    global last_checkpoint_url
     global predictor
     global last_image
-    if body.type != sam_type:
-        predictor = SamPredictor(get_sam_model(body.type).to(device=device))
-        sam_type = body.type
+    if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
+        predictor = SamPredictor(
+            get_sam_model(body.type, body.checkpoint_url).to(device=device)
+        )
+        last_sam_type = body.type
+        last_checkpoint_url = body.checkpoint_url
         last_image = None
     if last_image != body.b64img:
         image = _parse_image(body)
         predictor.set_image(image)
         last_image = body.b64img
     else:
-        print("Keeping the previous image!")
+        logger.info("Keeping the previous image!")
 
     start_time = time.time_ns()
     masks, quality, _ = predictor.predict(
@@ -125,7 +385,7 @@ async def predict_sam(body: SAMBody):
         multimask_output=body.multimask_output,
     )
     end_time = time.time_ns()
-    print(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+    logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
 
     features = []
     for obj_int, mask in enumerate(masks):
@@ -145,6 +405,10 @@ async def predict_sam(body: SAMBody):
 
 
 class SAMAutoMaskBody(BaseModel):
+    """
+    SAM auto mask body.
+    """
+
     type: Optional[ModelType] = ModelType.vit_h
     b64img: str
     points_per_side: Optional[int] = 32
@@ -160,23 +424,32 @@ class SAMAutoMaskBody(BaseModel):
     min_mask_region_area: int = 0
     output_type: str = "Single Mask"
     include_image_edge: bool = False
+    checkpoint_url: Optional[str] = None
 
 
 @app.post("/sam/automask/")
 async def automatic_mask_generator(body: SAMAutoMaskBody):
-    global sam_type
+    """
+    Generates masks automatically using SAM.
+    :param body: SAM auto mask body.
+    """
+    global last_sam_type
+    global last_checkpoint_url
     global predictor
     global last_image
-    if body.type != sam_type:
-        predictor = SamPredictor(get_sam_model(body.type).to(device=device))
-        sam_type = body.type
+    if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
+        predictor = SamPredictor(
+            get_sam_model(body.type, body.checkpoint_url).to(device=device)
+        )
+        last_sam_type = body.type
+        last_checkpoint_url = body.checkpoint_url
         last_image = None
     if last_image != body.b64img:
         image = _parse_image(body)
         predictor.set_image(image)
         last_image = body.b64img
     else:
-        print("Keeping the previous image!")
+        logger.info("Keeping the previous image!")
 
     mask_generator = SamAutomaticMaskGenerator(
         predictor=predictor,
@@ -199,7 +472,7 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     start_time = time.time_ns()
     masks = mask_generator.generate(image)
     end_time = time.time_ns()
-    print(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+    logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
 
     features = []
     for obj_int, mask in enumerate(masks):
@@ -219,6 +492,11 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
 
 
 def _parse_image(body: SAMBody):
+    """
+    Parses the image.
+    :param body: SAM body.
+    :return: Image as ndarray.
+    """
     image = decode_image(body.b64img)
     if image.ndim == 2:
         image = np.stack((image,) * 3, axis=-1)
@@ -226,16 +504,36 @@ def _parse_image(body: SAMBody):
 
 
 def _parse_mask(body: SAMBody):
+    """
+    Parses the mask.
+    :param body: SAM body.
+    :return: Mask as ndarray.
+    """
     return None if body.b64mask is None else decode_image(body.b64mask)
 
 
 def _parse_bbox(body: SAMBody):
+    """
+    Parses the bounding box.
+    :param body: SAM body.
+    :return: Bounding box as ndarray.
+    """
     return None if not body.bbox else np.array(body.bbox)[None]
 
 
 def _parse_point_labels(body: SAMBody):
+    """
+    Parses the point labels.
+    :param body: SAM body.
+    :return: Point labels as ndarray.
+    """
     return None if not body.point_labels else np.array(body.point_labels)
 
 
 def _parse_point_coords(body: SAMBody):
+    """
+    Parses the point coordinates.
+    :param body: SAM body.
+    :return: Point coordinates as ndarray.
+    """
     return None if not body.point_coords else np.array(body.point_coords)

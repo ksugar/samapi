@@ -57,9 +57,11 @@ python -m pip install -U git+https://github.com/ksugar/samapi.git
 
 ### Launch a server
 
+Since `v0.4.0`, it is important to launch the server with `--workers 2` (or more) to enable cancellation of a download of a weights file.
+
 ```bash
 export PYTORCH_ENABLE_MPS_FALLBACK=1 # Required for running on Apple silicon
-uvicorn samapi.main:app
+uvicorn samapi.main:app --workers 2
 ```
 
 The command above will launch a server at http://localhost:8000.
@@ -75,7 +77,7 @@ For more information, see [uvicorn documentation](https://www.uvicorn.org/#comma
 
 ### Request body
 
-#### Endpoint `/sam/`
+#### Endpoint `/sam/` (post)
 
 ```python
 class SAMBody(BaseModel):
@@ -84,13 +86,13 @@ class SAMBody(BaseModel):
     b64img: str
 ```
 
-| key    | value                                   |
-| ------ | --------------------------------------- |
-| type   | One of `vit_h`, `vit_l`, or `vit_b`     |
-| bbox   | Coordinate of a bbox `(x1, y1, x2, y2)` |
-| b64img | Base64-encoded image data               |
+| key    | value                                       |
+| ------ | ------------------------------------------- |
+| type   | One of `vit_h`, `vit_l`, `vit_b` or `vit_t` |
+| bbox   | Coordinate of a bbox `(x1, y1, x2, y2)`     |
+| b64img | Base64-encoded image data                   |
 
-#### Endpoint `/sam/automask/`
+#### Endpoint `/sam/automask/` (post)
 
 ```python
 class SAMAutoMaskBody(BaseModel):
@@ -137,7 +139,96 @@ The response body contains a list of [GeoJSON Feature objects](https://geojson.o
 
 Supporting other formats is a future work.
 
+#### Endpoint `/sam/version/` (get)
+
+Returns the version of the SAM API.
+
+##### Response body
+
+The version of the SAM API.
+
+```plaintext
+0.4.0
+```
+
+#### Endpoint `/sam/weights/` (get)
+
+Returns a list of the available weights.
+
+##### Query parameters
+
+| key             | value                                        |
+| --------------- | -------------------------------------------- |
+| type (Optional) | One of `vit_h`, `vit_l`, `vit_b` or `vit_t`. |
+
+##### Response body
+
+A list of the available weights.
+
+| key  | value                                        |
+| ---- | -------------------------------------------- |
+| type | One of `vit_h`, `vit_l`, `vit_b` or `vit_t`. |
+| name | The name of the registered SAM weights.      |
+| URL  | The URL of the registered SAM weights.       |
+
+#### Endpoint `/sam/weights/` (post)
+
+Registers SAM weights.
+
+##### Request body
+
+```python
+class SAMWeightsBody(BaseModel):
+    type: ModelType
+    name: str
+    url: str
+```
+
+| key  | value                                        |
+| ---- | -------------------------------------------- |
+| type | One of `vit_h`, `vit_l`, `vit_b` or `vit_t`. |
+| name | The name of the SAM weights to register.     |
+| URL  | The URL to the SAM weights file to register. |
+
+
+##### Response body
+
+A message indicating whether the registration is successful.
+
+```plaintext
+name https://path/to/weights/file.pth is registered.
+```
+
+#### Endpoint `/sam/weights/cancel/` (get)
+
+Cancel the download of the SAM weights.
+
+##### Response body
+
+A message indicating that the cancel signal is sent.
+
+```plaintext
+Cancel signal sent
+```
+
+#### Endpoint `/sam/progress/` (get)
+
+Returns the progress.
+
+##### Response body
+
+The progress.
+
+| key     | value                              |
+| ------- | ---------------------------------- |
+| message | A message indicating the progress. |
+| percent | Integer value in [0, 100].         |
+
 ## Updates
+
+### v0.4.0
+
+- Support for registering SAM weights from URL. [ksugar/qupath-extension-sam#8](https://github.com/ksugar/qupath-extension-sam/issues/8) [ksugar/samapi#11](https://github.com/ksugar/samapi/pull/11) by [@constantinpape](https://github.com/constantinpape)
 
 ### v0.3.0
 
