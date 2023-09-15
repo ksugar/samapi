@@ -185,7 +185,7 @@ def register_state_dict_from_url(model_type: ModelType, url: str, name: str) -> 
         if os.path.exists(SAMAPI_CANCEL_FILE):
             os.remove(SAMAPI_CANCEL_FILE)
     json_file = model_dir / f"{Path(filepath).stem}.json"
-    with open(json_file, "w") as f:
+    with open(json_file, "w", encoding="utf-8") as f:
         json.dump({"type": model_type, "name": name, "url": url}, f)
     return True
 
@@ -242,7 +242,7 @@ def _get_weights_at(p_model_dir: Path, remove_orphans: bool = True):
     for p in sorted(paths, key=os.path.getmtime):
         p_json = p.parent / f"{p.stem}.json"
         if p_json.exists():
-            with open(p_json) as file:
+            with open(p_json, encoding="utf-8") as file:
                 metadata = json.load(file)
             weights.append(
                 {
@@ -311,7 +311,7 @@ async def cancel_download():
     """
     if os.path.exists(SAMAPI_CANCEL_FILE):
         os.remove(SAMAPI_CANCEL_FILE)
-    with open(SAMAPI_CANCEL_FILE, "w") as f:
+    with open(SAMAPI_CANCEL_FILE, "w", encoding="utf-8") as f:
         f.write("cancel")
     return "Cancel signal sent"
 
@@ -322,7 +322,7 @@ async def get_progress():
     Returns the progress.
     :return: The progress.
     """
-    with open(SAMAPI_STDERR) as f:
+    with open(SAMAPI_STDERR, encoding="utf-8") as f:
         result = f.read()
         if "| " in result:
             message = result.split("| ")[-1]

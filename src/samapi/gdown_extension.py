@@ -79,7 +79,7 @@ def _get_session(proxy, use_cookies, return_cookies_file=False):
     # Load cookies if exists
     cookies_file = osp.join(home, ".cache/gdown/cookies.json")
     if osp.exists(cookies_file) and use_cookies:
-        with open(cookies_file) as f:
+        with open(cookies_file, encoding="utf-8") as f:
             cookies = json.load(f)
         for k, v in cookies:
             sess.cookies[k] = v
@@ -227,7 +227,7 @@ def download(
             if not osp.exists(osp.dirname(cookies_file)):
                 os.makedirs(osp.dirname(cookies_file))
             # Save cookies
-            with open(cookies_file, "w") as f:
+            with open(cookies_file, "w", encoding="utf-8") as f:
                 cookies = [
                     (k, v)
                     for k, v in sess.cookies.items()
@@ -305,7 +305,7 @@ def download(
                 prefix=osp.basename(output),
                 dir=osp.dirname(output),
             )
-        f = open(tmp_file, "ab")
+        f = open(tmp_file, "ab", encoding="utf-8")
     else:
         tmp_file = None
         f = output
