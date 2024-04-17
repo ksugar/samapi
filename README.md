@@ -73,8 +73,8 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 ```
 
-[!NOTE]
-If you want to access remotely, you may need to launch with `--host 0.0.0.0`.
+> [!NOTE]
+> If you want to access remotely, you may need to launch with `--host 0.0.0.0`.
 
 ```bash
 uvicorn samapi.main:app --workers 2 --host 0.0.0.0
@@ -155,7 +155,7 @@ Returns the version of the SAM API.
 The version of the SAM API.
 
 ```plaintext
-0.4.0
+0.4.1
 ```
 
 #### Endpoint `/sam/weights/` (get)
@@ -232,6 +232,14 @@ The progress.
 | percent | Integer value in [0, 100].         |
 
 ## Updates
+
+### v0.4.1
+
+- Update dependencies. Related to: [ksugar/qupath-extension-sam#16](https://github.com/ksugar/qupath-extension-sam/issues/16) by [@halqadasi](https://github.com/halqadasi) and [ksugar/samapi#18](https://github.com/ksugar/samapi/issues/18) by [@ArezooGhodsifard](https://github.com/ArezooGhodsifard).
+  - [cuda-toolkit](https://anaconda.org/nvidia/cuda-toolkit) from `11.7` to `11.8`.
+  - [gdown](https://github.com/wkentaro/gdown) from `^4.7.1` to `^5.1.0`.
+  - [torch](https://github.com/pytorch/pytorch) from `^1.13.1` to `^2.2.2`.
+  - [torchvision](https://github.com/pytorch/vision) from `^0.14.1` to `^0.17.2`.
 
 ### v0.4.0
 
