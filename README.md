@@ -23,14 +23,14 @@ conda activate samapi
 If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
 
 ```bash
-conda install -c conda-forge -y cudatoolkit=11.7
+conda install -c conda-forge -y cudatoolkit=11.8
 ```
 
 If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support with the following command.
 
 ```bash
 # Windows with CUDA-compatible GPU only
-python -m pip install "torch>=1.13.1,<2.0" torchvision --index-url https://download.pytorch.org/whl/cu117
+python -m pip install "torch>=2.2.2,<3.0" torchvision --index-url https://download.pytorch.org/whl/cu118
 ```
 
 Install `samapi` and its dependencies.
@@ -71,6 +71,13 @@ INFO:     Started server process [21258]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
+[!NOTE]
+If you want to access remotely, you may need to launch with `--host 0.0.0.0`.
+
+```bash
+uvicorn samapi.main:app --workers 2 --host 0.0.0.0
 ```
 
 For more information, see [uvicorn documentation](https://www.uvicorn.org/#command-line-options).
