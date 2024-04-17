@@ -9,7 +9,7 @@ packages = [{include = "samapi", from = "src"}]
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 fastapi = {extras = ["all"], version = "^0.96.0"}
-torch = "^2.2.2,"
+torch = "^2.2.2"
 mobile_sam = {git = "https://github.com/ksugar/MobileSAM.git"}
 geojson = "^3.0.1"
 pillow = "^9.5.0"
