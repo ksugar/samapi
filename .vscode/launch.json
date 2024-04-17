@@ -6,11 +6,12 @@
     "configurations": [
         {
             "name": "Python: FastAPI",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
             "args": [
                 "src.samapi.main:app",
+                "--workers=2",
                 "--host=0.0.0.0",
                 "--reload"
             ],
