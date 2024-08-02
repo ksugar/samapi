@@ -1,6 +1,7 @@
 """
 This is a main.py file for the FastAPI app.
 """
+
 from contextlib import redirect_stderr
 from enum import Enum
 from io import TextIOWrapper
@@ -19,7 +20,17 @@ from geojson import Feature
 import numpy as np
 from pydantic import BaseModel
 from pydantic import Field
-from mobile_sam import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+from mobile_sam import (
+    SamAutomaticMaskGenerator,
+    SamPredictor,
+    build_sam_vit_h,
+    build_sam_vit_l,
+    build_sam_vit_b,
+    build_sam_vit_t,
+)
+
+from sam2.build_sam import build_sam2, _load_checkpoint
+from sam2.sam2_image_predictor import SAM2ImagePredictor
 import torch
 
 from samapi import __version__
@@ -87,6 +98,10 @@ class ModelType(str, Enum):
     vit_l = "vit_l"
     vit_b = "vit_b"
     vit_t = "vit_t"
+    sam2_l = "sam2_l"
+    sam2_bp = "sam2_bp"
+    sam2_s = "sam2_s"
+    sam2_t = "sam2_t"
 
 
 DEFAULT_CHECKPOINT_URLS = {
@@ -94,6 +109,67 @@ DEFAULT_CHECKPOINT_URLS = {
     ModelType.vit_l: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
     ModelType.vit_b: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
     ModelType.vit_t: "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt",
+    ModelType.sam2_l: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt",
+    ModelType.sam2_bp: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
+    ModelType.sam2_s: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
+    ModelType.sam2_t: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
+}
+
+
+def build_sam2_l(checkpoint=None):
+    return build_sam2(
+        "sam2_hiera_l.yaml",
+        ckpt_path=checkpoint,
+        device=_get_device(),
+    )
+
+
+def build_sam2_bp(checkpoint=None):
+    return build_sam2(
+        "sam2_hiera_b+.yaml",
+        ckpt_path=checkpoint,
+        device=_get_device(),
+    )
+
+
+def build_sam2_s(checkpoint=None):
+    return build_sam2(
+        "sam2_hiera_s.yaml",
+        ckpt_path=checkpoint,
+        device=_get_device(),
+    )
+
+
+def build_sam2_t(checkpoint=None):
+    return build_sam2(
+        "sam2_hiera_t.yaml",
+        ckpt_path=checkpoint,
+        device=_get_device(),
+    )
+
+
+sam_model_registry = {
+    "default": build_sam_vit_h,
+    "vit_h": build_sam_vit_h,
+    "vit_l": build_sam_vit_l,
+    "vit_b": build_sam_vit_b,
+    "vit_t": build_sam_vit_t,
+    "sam2_l": build_sam2_l,
+    "sam2_bp": build_sam2_bp,
+    "sam2_s": build_sam2_s,
+    "sam2_t": build_sam2_t,
+}
+
+sam_predictor_registry = {
+    "default": SamPredictor,
+    "vit_h": SamPredictor,
+    "vit_l": SamPredictor,
+    "vit_b": SamPredictor,
+    "vit_t": SamPredictor,
+    "sam2_l": SAM2ImagePredictor,
+    "sam2_bp": SAM2ImagePredictor,
+    "sam2_s": SAM2ImagePredictor,
+    "sam2_t": SAM2ImagePredictor,
 }
 
 
@@ -107,14 +183,26 @@ def get_sam_model(model_type: ModelType, checkpoint_url: Optional[str] = None):
     sam = sam_model_registry[model_type]()
     if checkpoint_url is None:
         checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
-    sam.load_state_dict(
-        load_state_dict_from_url(
-            url=checkpoint_url,
-            model_dir=str(Path(SAMAPI_ROOT_DIR) / model_type.name),
-            cancel_filepath=SAMAPI_CANCEL_FILE,
-            map_location=torch.device("cpu"),
-        )[0]
-    )
+    state_dict = load_state_dict_from_url(
+        url=checkpoint_url,
+        model_dir=str(Path(SAMAPI_ROOT_DIR) / model_type.name),
+        cancel_filepath=SAMAPI_CANCEL_FILE,
+        map_location=torch.device("cpu"),
+    )[0]
+    if model_type in (
+        ModelType.sam2_l,
+        ModelType.sam2_bp,
+        ModelType.sam2_s,
+        ModelType.sam2_t,
+    ):
+        state_dict = state_dict["model"]
+    missing_keys, unexpected_keys = sam.load_state_dict(state_dict)
+    if missing_keys:
+        logger.error(missing_keys)
+        raise RuntimeError()
+    if unexpected_keys:
+        logger.error(unexpected_keys)
+        raise RuntimeError()
     return sam
 
 
@@ -202,9 +290,11 @@ def _register_default_weights():
 _register_default_weights()
 
 # global variables
-last_sam_type = ModelType.vit_h
+last_sam_type = ModelType.vit_t
 last_checkpoint_url = None
-predictor = SamPredictor(get_sam_model(model_type=last_sam_type).to(device=device))
+predictor = sam_predictor_registry[last_sam_type](
+    get_sam_model(model_type=last_sam_type).to(device=device)
+)
 last_image = None
 
 
@@ -363,7 +453,7 @@ async def predict_sam(body: SAMBody):
     global predictor
     global last_image
     if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
-        predictor = SamPredictor(
+        predictor = sam_predictor_registry[body.type](
             get_sam_model(body.type, body.checkpoint_url).to(device=device)
         )
         last_sam_type = body.type
@@ -438,7 +528,7 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     global predictor
     global last_image
     if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
-        predictor = SamPredictor(
+        predictor = sam_predictor_registry[body.type](
             get_sam_model(body.type, body.checkpoint_url).to(device=device)
         )
         last_sam_type = body.type
