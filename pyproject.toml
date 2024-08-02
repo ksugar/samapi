@@ -1,25 +1,27 @@
 [tool.poetry]
 name = "samapi"
-version = "0.4.1"
+version = "0.5.0"
 description = "Segment Anything Model (SAM) API"
 authors = ["Ko Sugawara <ko.sugawara@ens-lyon.fr>"]
 readme = "README.md"
-packages = [{include = "samapi", from = "src"}]
+packages = [{include = "samapi", from = "src"}, {include = "sam2_configs", from = "src"}]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
+python = ">=3.10.0,<3.12"
 fastapi = {extras = ["all"], version = "^0.96.0"}
-torch = "^2.2.2"
+torch = "^2.3.1"
 mobile_sam = {git = "https://github.com/ksugar/MobileSAM.git"}
 geojson = "^3.0.1"
 pillow = "^9.5.0"
 numpy = "^1.23.5"
 scikit-image = "^0.21.0"
 shapely = "^2.0.1"
-torchvision = "^0.17.2"
+torchvision = "^0.18.1"
 opencv-python = "^4.7.0.72"
 timm = "^0.9.2"
 gdown = "^5.1.0"
+sam2 = {git = "https://github.com/ksugar/segment-anything-2", branch="support-non-cuda"}
+setuptools = "^72.1.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"
