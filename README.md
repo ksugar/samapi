@@ -30,7 +30,7 @@ If you're using a computer with CUDA-compatible GPU on Windows, install `torch` 
 
 ```bash
 # Windows with CUDA-compatible GPU only
-python -m pip install "torch>=2.2.2,<3.0" torchvision --index-url https://download.pytorch.org/whl/cu118
+python -m pip install "torch>=2.3.1,<2.4" torchvision --index-url https://download.pytorch.org/whl/cu118
 ```
 
 Install `samapi` and its dependencies.
@@ -232,6 +232,10 @@ The progress.
 | percent | Integer value in [0, 100].         |
 
 ## Updates
+
+### v0.5.0
+
+- Support [SAM2](https://ai.meta.com/sam2/) models.
 
 ### v0.4.1
 
