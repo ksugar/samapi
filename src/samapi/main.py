@@ -29,7 +29,8 @@ from mobile_sam import (
     build_sam_vit_t,
 )
 
-from sam2.build_sam import build_sam2, _load_checkpoint
+from sam2.build_sam import build_sam2
+from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import torch
 
@@ -541,22 +542,44 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     else:
         logger.info("Keeping the previous image!")
 
-    mask_generator = SamAutomaticMaskGenerator(
-        predictor=predictor,
-        points_per_side=body.points_per_side,
-        points_per_batch=body.points_per_batch,
-        pred_iou_thresh=body.pred_iou_thresh,
-        stability_score_thresh=body.stability_score_thresh,
-        stability_score_offset=body.stability_score_offset,
-        box_nms_thresh=body.box_nms_thresh,
-        crop_n_layers=body.crop_n_layers,
-        crop_nms_thresh=body.crop_nms_thresh,
-        crop_overlap_ratio=body.crop_overlap_ratio,
-        crop_n_points_downscale_factor=body.crop_n_points_downscale_factor,
-        min_mask_region_area=body.min_mask_region_area,
-        output_type=body.output_type,
-        include_image_edge=body.include_image_edge,
-    )
+    if body.type in (
+        ModelType.sam2_l,
+        ModelType.sam2_bp,
+        ModelType.sam2_s,
+        ModelType.sam2_t,
+    ):
+        mask_generator = SAM2AutomaticMaskGenerator(
+            model=predictor.model,
+            points_per_side=body.points_per_side,
+            points_per_batch=body.points_per_batch,
+            pred_iou_thresh=body.pred_iou_thresh,
+            stability_score_thresh=body.stability_score_thresh,
+            stability_score_offset=body.stability_score_offset,
+            box_nms_thresh=body.box_nms_thresh,
+            crop_n_layers=body.crop_n_layers,
+            crop_nms_thresh=body.crop_nms_thresh,
+            crop_overlap_ratio=body.crop_overlap_ratio,
+            crop_n_points_downscale_factor=body.crop_n_points_downscale_factor,
+            min_mask_region_area=body.min_mask_region_area,
+            multimask_output="Multi" in body.output_type,
+        )
+    else:
+        mask_generator = SamAutomaticMaskGenerator(
+            predictor=predictor,
+            points_per_side=body.points_per_side,
+            points_per_batch=body.points_per_batch,
+            pred_iou_thresh=body.pred_iou_thresh,
+            stability_score_thresh=body.stability_score_thresh,
+            stability_score_offset=body.stability_score_offset,
+            box_nms_thresh=body.box_nms_thresh,
+            crop_n_layers=body.crop_n_layers,
+            crop_nms_thresh=body.crop_nms_thresh,
+            crop_overlap_ratio=body.crop_overlap_ratio,
+            crop_n_points_downscale_factor=body.crop_n_points_downscale_factor,
+            min_mask_region_area=body.min_mask_region_area,
+            output_type=body.output_type,
+            include_image_edge=body.include_image_edge,
+        )
 
     image = _parse_image(body)
     start_time = time.time_ns()
