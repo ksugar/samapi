@@ -2,22 +2,27 @@
 This is a main.py file for the FastAPI app.
 """
 
+import base64
 from contextlib import redirect_stderr
 from enum import Enum
+from functools import partial
+import io
 from io import TextIOWrapper
 import json
 import logging
 import os
 from pathlib import Path
 import sys
+import tempfile
 import time
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from geojson import Feature
 import numpy as np
+from PIL import Image
 from pydantic import BaseModel
 from pydantic import Field
 from mobile_sam import (
@@ -29,7 +34,7 @@ from mobile_sam import (
     build_sam_vit_t,
 )
 
-from sam2.build_sam import build_sam2
+from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import torch
@@ -38,6 +43,7 @@ from samapi import __version__
 from samapi.hub_extension import load_state_dict_from_url
 from samapi.utils import decode_image, mask_to_geometry
 
+logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
 
 SAMAPI_ROOT_DIR = os.getenv("SAMAPI_ROOT_DIR", str(Path.home() / ".samapi"))
@@ -90,123 +96,6 @@ uvicorn_logger.addFilter(EndpointFilter(path="/sam/weights/cancel/"))
 app = FastAPI()
 
 
-class ModelType(str, Enum):
-    """
-    Model types.
-    """
-
-    vit_h = "vit_h"
-    vit_l = "vit_l"
-    vit_b = "vit_b"
-    vit_t = "vit_t"
-    sam2_l = "sam2_l"
-    sam2_bp = "sam2_bp"
-    sam2_s = "sam2_s"
-    sam2_t = "sam2_t"
-
-
-DEFAULT_CHECKPOINT_URLS = {
-    ModelType.vit_h: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
-    ModelType.vit_l: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
-    ModelType.vit_b: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
-    ModelType.vit_t: "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt",
-    ModelType.sam2_l: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt",
-    ModelType.sam2_bp: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
-    ModelType.sam2_s: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
-    ModelType.sam2_t: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
-}
-
-
-def build_sam2_l(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_l.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-def build_sam2_bp(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_b+.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-def build_sam2_s(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_s.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-def build_sam2_t(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_t.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-sam_model_registry = {
-    "default": build_sam_vit_h,
-    "vit_h": build_sam_vit_h,
-    "vit_l": build_sam_vit_l,
-    "vit_b": build_sam_vit_b,
-    "vit_t": build_sam_vit_t,
-    "sam2_l": build_sam2_l,
-    "sam2_bp": build_sam2_bp,
-    "sam2_s": build_sam2_s,
-    "sam2_t": build_sam2_t,
-}
-
-sam_predictor_registry = {
-    "default": SamPredictor,
-    "vit_h": SamPredictor,
-    "vit_l": SamPredictor,
-    "vit_b": SamPredictor,
-    "vit_t": SamPredictor,
-    "sam2_l": SAM2ImagePredictor,
-    "sam2_bp": SAM2ImagePredictor,
-    "sam2_s": SAM2ImagePredictor,
-    "sam2_t": SAM2ImagePredictor,
-}
-
-
-def get_sam_model(model_type: ModelType, checkpoint_url: Optional[str] = None):
-    """
-    Returns a SAM model.
-    :param model_type: Model type.
-    :param checkpoint_url: Checkpoint URL.
-    :return: SAM model.
-    """
-    sam = sam_model_registry[model_type]()
-    if checkpoint_url is None:
-        checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
-    state_dict = load_state_dict_from_url(
-        url=checkpoint_url,
-        model_dir=str(Path(SAMAPI_ROOT_DIR) / model_type.name),
-        cancel_filepath=SAMAPI_CANCEL_FILE,
-        map_location=torch.device("cpu"),
-    )[0]
-    if model_type in (
-        ModelType.sam2_l,
-        ModelType.sam2_bp,
-        ModelType.sam2_s,
-        ModelType.sam2_t,
-    ):
-        state_dict = state_dict["model"]
-    missing_keys, unexpected_keys = sam.load_state_dict(state_dict)
-    if missing_keys:
-        logger.error(missing_keys)
-        raise RuntimeError()
-    if unexpected_keys:
-        logger.error(unexpected_keys)
-        raise RuntimeError()
-    return sam
-
-
 def _get_device() -> str:
     """
     Selects the device to use for inference, based on what is available.
@@ -243,6 +132,106 @@ def _get_device() -> str:
 
 
 device = _get_device()
+
+
+class ModelType(str, Enum):
+    """
+    Model types.
+    """
+
+    vit_h = "vit_h"
+    vit_l = "vit_l"
+    vit_b = "vit_b"
+    vit_t = "vit_t"
+    sam2_l = "sam2_l"
+    sam2_bp = "sam2_bp"
+    sam2_s = "sam2_s"
+    sam2_t = "sam2_t"
+
+
+DEFAULT_CHECKPOINT_URLS = {
+    ModelType.vit_h: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+    ModelType.vit_l: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+    ModelType.vit_b: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+    ModelType.vit_t: "https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt",
+    ModelType.sam2_l: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt",
+    ModelType.sam2_bp: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
+    ModelType.sam2_s: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
+    ModelType.sam2_t: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
+}
+
+
+sam_model_registry = {
+    "default": build_sam_vit_h,
+    "vit_h": build_sam_vit_h,
+    "vit_l": build_sam_vit_l,
+    "vit_b": build_sam_vit_b,
+    "vit_t": build_sam_vit_t,
+    "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml", device=device),
+    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_bp.yaml", device=device),
+    "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml", device=device),
+    "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml", device=device),
+    "sam2_l_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_l.yaml", device=device
+    ),
+    "sam2_bp_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_bp.yaml", device=device
+    ),
+    "sam2_s_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_s.yaml", device=device
+    ),
+    "sam2_t_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_t.yaml", device=device
+    ),
+}
+
+sam_predictor_registry = {
+    "default": SamPredictor,
+    "vit_h": SamPredictor,
+    "vit_l": SamPredictor,
+    "vit_b": SamPredictor,
+    "vit_t": SamPredictor,
+    "sam2_l": SAM2ImagePredictor,
+    "sam2_bp": SAM2ImagePredictor,
+    "sam2_s": SAM2ImagePredictor,
+    "sam2_t": SAM2ImagePredictor,
+}
+
+
+def get_sam_model(
+    model_type: ModelType, checkpoint_url: Optional[str] = None, is_video: bool = False
+):
+    """
+    Returns a SAM model.
+    :param model_type: Model type.
+    :param checkpoint_url: Checkpoint URL.
+    :return: SAM model.
+    """
+    model_key = model_type.value + ("_v" if is_video else "")
+    sam = sam_model_registry[model_key]()
+    if checkpoint_url is None:
+        checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
+    state_dict = load_state_dict_from_url(
+        url=checkpoint_url,
+        model_dir=str(Path(SAMAPI_ROOT_DIR) / model_type.name),
+        cancel_filepath=SAMAPI_CANCEL_FILE,
+        map_location=torch.device("cpu"),
+    )[0]
+    if model_type in (
+        ModelType.sam2_l,
+        ModelType.sam2_bp,
+        ModelType.sam2_s,
+        ModelType.sam2_t,
+    ):
+        state_dict = state_dict["model"]
+    missing_keys, unexpected_keys = sam.load_state_dict(state_dict)
+    if missing_keys:
+        logger.error(missing_keys)
+        raise RuntimeError()
+    if unexpected_keys:
+        logger.error(unexpected_keys)
+        raise RuntimeError()
+    return sam
 
 
 def register_state_dict_from_url(model_type: ModelType, url: str, name: str) -> bool:
@@ -604,6 +593,115 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     return features
 
 
+class SAMVideoBody(BaseModel):
+    """
+    SAM video predicotr body.
+    """
+
+    type: Optional[ModelType] = ModelType.sam2_t
+    b64imgs: List[str]
+    axes: str = "XYT"
+    plane_position: Optional[int] = 0
+    objs: Optional[Dict[int, List[Dict]]] = Field(
+        example={
+            0: {
+                "obj_id": 0,
+                "point_coords": ((0, 0), (1, 0)),
+                "point_labels": (0, 1),
+                "bbox": [0, 0, 10, 10],
+            }
+        }
+    )
+    checkpoint_url: Optional[str] = None
+
+
+@app.post("/sam/video/")
+async def video_predictor(body: SAMVideoBody):
+    """
+    Generates masks from video automatically using SAM2.
+    :param body: SAM video body.
+    """
+    if body.type not in (
+        ModelType.sam2_l,
+        ModelType.sam2_bp,
+        ModelType.sam2_s,
+        ModelType.sam2_t,
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Only SAM2 models are supported for video prediction.",
+        )
+    predictor = get_sam_model(body.type, body.checkpoint_url, is_video=True)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        logger.info(f"Saving images to {temp_dir}")
+        for idx, b64img in enumerate(body.b64imgs):
+            # Decode the base64 image
+            image_data = base64.b64decode(b64img)
+            image = Image.open(io.BytesIO(image_data))
+
+            # Convert to RGB if the image is grayscale
+            if image.mode == "L":
+                image = image.convert("RGB")
+
+            # Save the image as JPEG in the temporary directory
+            image_path = os.path.join(temp_dir, f"{idx}.jpg")
+            image.save(image_path, "JPEG")
+        logger.info(f"Saved {len(body.b64imgs)} images to {temp_dir}")
+        inference_state = predictor.init_state(video_path=temp_dir)
+        predictor.reset_state(inference_state)
+        for ann_frame_idx, objs in body.objs.items():
+            for obj in objs:
+                _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+                    inference_state=inference_state,
+                    frame_idx=ann_frame_idx,
+                    obj_id=obj.get("obj_id"),
+                    points=obj.get("point_coords"),
+                    labels=obj.get("point_labels"),
+                    box=obj.get("bbox"),
+                )
+        video_segments = {}
+        start_time = time.time_ns()
+        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
+            inference_state
+        ):
+            video_segments[out_frame_idx] = {
+                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+        end_time = time.time_ns()
+        logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+
+    features = []
+    for frame_idx, masks in video_segments.items():
+        if body.axes == "XYZ":
+            plane = {
+                "c": -1,
+                "z": frame_idx,
+                "t": body.plane_position,
+            }
+        if body.axes == "XYT":
+            plane = {
+                "c": -1,
+                "z": body.plane_position,
+                "t": frame_idx,
+            }
+        for obj_id, mask in masks.items():
+            geometry = mask_to_geometry(mask[0])
+            geometry["plane"] = plane
+            features.append(
+                Feature(
+                    geometry=geometry,
+                    properties={
+                        "object_idx": obj_id,
+                        "label": "object",
+                        "sam_model": body.type,
+                    },
+                )
+            )
+    return features
+
+
 def _parse_image(body: SAMBody):
     """
     Parses the image.
@@ -612,7 +710,7 @@ def _parse_image(body: SAMBody):
     """
     image = decode_image(body.b64img)
     if image.ndim == 2:
-        image = np.stack((image,) * 3, axis=-1)
+        image = np.stack((image,) * 3, axes=-1)
     return image
 
 

@@ -28,7 +28,10 @@ def mask_to_geometry(
         pixels = []
         for _, item in enumerate(contours_find):
             pixels.append(len(item))
-        index = np.argmax(pixels)
+        try:
+            index = np.argmax(pixels)
+        except:
+            return geojson_polygon([])
     contour = contours_find[index]
     contour -= 1  # reset padding
     contour_as_numpy = contour[:, np.argsort([1, 0])]
