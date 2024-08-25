@@ -96,44 +96,6 @@ uvicorn_logger.addFilter(EndpointFilter(path="/sam/weights/cancel/"))
 app = FastAPI()
 
 
-def _get_device() -> str:
-    """
-    Selects the device to use for inference, based on what is available.
-    :return: device as str
-    """
-    device = "cpu"
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_built():
-        if torch.backends.mps.is_available():
-            device = "mps"
-        else:
-            warnings.warn(
-                "MPS not available because the current MacOS version is not "
-                "12.3+ and/or you do not have an MPS-enabled device on this "
-                "machine - using CPU for inference"
-            )
-    else:
-        warnings.warn("No GPU support found - using CPU for inference")
-
-    # Make sure that the device is ready
-    if device in ("cuda", "mps"):
-        try:
-            dummy_input = np.zeros((16, 16, 3), dtype=np.uint8)
-            SamPredictor(get_sam_model(ModelType.vit_b).to(device=device)).set_image(
-                dummy_input
-            )
-        except Exception as e:
-            warnings.warn(
-                f"{device} device found but got the error {str(e)} - using CPU for inference"
-            )
-            device = "cpu"
-    return device
-
-
-device = _get_device()
-
-
 class ModelType(str, Enum):
     """
     Model types.
@@ -167,22 +129,14 @@ sam_model_registry = {
     "vit_l": build_sam_vit_l,
     "vit_b": build_sam_vit_b,
     "vit_t": build_sam_vit_t,
-    "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml", device=device),
-    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml", device=device),
-    "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml", device=device),
-    "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml", device=device),
-    "sam2_l_v": partial(
-        build_sam2_video_predictor, config_file="sam2_hiera_l.yaml", device=device
-    ),
-    "sam2_bp_v": partial(
-        build_sam2_video_predictor, config_file="sam2_hiera_b+.yaml", device=device
-    ),
-    "sam2_s_v": partial(
-        build_sam2_video_predictor, config_file="sam2_hiera_s.yaml", device=device
-    ),
-    "sam2_t_v": partial(
-        build_sam2_video_predictor, config_file="sam2_hiera_t.yaml", device=device
-    ),
+    "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml"),
+    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml"),
+    "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml"),
+    "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml"),
+    "sam2_l_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_l.yaml"),
+    "sam2_bp_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_b+.yaml"),
+    "sam2_s_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_s.yaml"),
+    "sam2_t_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_t.yaml"),
 }
 
 sam_predictor_registry = {
@@ -232,6 +186,44 @@ def get_sam_model(
         logger.error(unexpected_keys)
         raise RuntimeError()
     return sam
+
+
+def _get_device() -> str:
+    """
+    Selects the device to use for inference, based on what is available.
+    :return: device as str
+    """
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_built():
+        if torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            warnings.warn(
+                "MPS not available because the current MacOS version is not "
+                "12.3+ and/or you do not have an MPS-enabled device on this "
+                "machine - using CPU for inference"
+            )
+    else:
+        warnings.warn("No GPU support found - using CPU for inference")
+
+    # Make sure that the device is ready
+    if device in ("cuda", "mps"):
+        try:
+            dummy_input = np.zeros((16, 16, 3), dtype=np.uint8)
+            SamPredictor(get_sam_model(ModelType.vit_b).to(device=device)).set_image(
+                dummy_input
+            )
+        except Exception as e:
+            warnings.warn(
+                f"{device} device found but got the error {str(e)} - using CPU for inference"
+            )
+            device = "cpu"
+    return device
+
+
+device = _get_device()
 
 
 def register_state_dict_from_url(model_type: ModelType, url: str, name: str) -> bool:
@@ -633,7 +625,11 @@ async def video_predictor(body: SAMVideoBody):
             status_code=404,
             detail="Only SAM2 models are supported for video prediction.",
         )
-    predictor = get_sam_model(body.type, body.checkpoint_url, is_video=True)
+    predictor = get_sam_model(
+        body.type,
+        body.checkpoint_url,
+        is_video=True,
+    ).to(device=device)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         logger.info(f"Saving images to {temp_dir}")
