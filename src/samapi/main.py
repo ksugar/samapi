@@ -168,14 +168,14 @@ sam_model_registry = {
     "vit_b": build_sam_vit_b,
     "vit_t": build_sam_vit_t,
     "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml", device=device),
-    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_bp.yaml", device=device),
+    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml", device=device),
     "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml", device=device),
     "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml", device=device),
     "sam2_l_v": partial(
         build_sam2_video_predictor, config_file="sam2_hiera_l.yaml", device=device
     ),
     "sam2_bp_v": partial(
-        build_sam2_video_predictor, config_file="sam2_hiera_bp.yaml", device=device
+        build_sam2_video_predictor, config_file="sam2_hiera_b+.yaml", device=device
     ),
     "sam2_s_v": partial(
         build_sam2_video_predictor, config_file="sam2_hiera_s.yaml", device=device
