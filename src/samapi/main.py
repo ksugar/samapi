@@ -602,6 +602,8 @@ class SAMVideoBody(BaseModel):
     b64imgs: List[str]
     axes: str = "XYT"
     plane_position: Optional[int] = 0
+    start_frame_idx: Optional[int] = None
+    max_frame_num_to_track: Optional[int] = None
     objs: Optional[Dict[int, List[Dict]]] = Field(
         example={
             0: {
@@ -663,7 +665,9 @@ async def video_predictor(body: SAMVideoBody):
         video_segments = {}
         start_time = time.time_ns()
         for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
-            inference_state
+            inference_state,
+            start_frame_idx=body.start_frame_idx,
+            max_frame_num_to_track=body.max_frame_num_to_track,
         ):
             video_segments[out_frame_idx] = {
                 out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
