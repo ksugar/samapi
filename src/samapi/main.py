@@ -12,13 +12,14 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from geojson import Feature
 import numpy as np
@@ -133,10 +134,18 @@ sam_model_registry = {
     "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml"),
     "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml"),
     "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml"),
-    "sam2_l_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_l.yaml"),
-    "sam2_bp_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_b+.yaml"),
-    "sam2_s_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_s.yaml"),
-    "sam2_t_v": partial(build_sam2_video_predictor, config_file="sam2_hiera_t.yaml"),
+    "sam2_l_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_l.yaml", device="cpu"
+    ),
+    "sam2_bp_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_b+.yaml", device="cpu"
+    ),
+    "sam2_s_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_s.yaml", device="cpu"
+    ),
+    "sam2_t_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_t.yaml", device="cpu"
+    ),
 }
 
 sam_predictor_registry = {
@@ -585,13 +594,30 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     return features
 
 
+@app.post("/sam/upload/")
+async def video_upload(
+    dirname: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """
+    Uploads a file for SAM video predictor.
+    :param body: SAM upload body.
+    """
+    file_path = Path(SAMAPI_ROOT_DIR) / "videos" / dirname / file.filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, "wb") as f:
+        f.write(file.file.read())
+    return {"filename": file.filename}
+
+
 class SAMVideoBody(BaseModel):
     """
     SAM video predicotr body.
     """
 
     type: Optional[ModelType] = ModelType.sam2_t
-    b64imgs: List[str]
+    dirname: Optional[str] = None
+    b64imgs: Optional[List[str]] = None
     axes: str = "XYT"
     plane_position: Optional[int] = 0
     start_frame_idx: Optional[int] = None
@@ -607,6 +633,41 @@ class SAMVideoBody(BaseModel):
         }
     )
     checkpoint_url: Optional[str] = None
+
+
+def get_video_segments(
+    predictor: SAM2ImagePredictor,
+    video_path: str,
+    objs_dict: Dict[int, List[Dict]],
+    start_frame_idx: int,
+    max_frame_num_to_track: int,
+):
+    inference_state = predictor.init_state(video_path=video_path)
+    predictor.reset_state(inference_state)
+    for ann_frame_idx, objs in objs_dict.items():
+        for obj in objs:
+            _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+                inference_state=inference_state,
+                frame_idx=ann_frame_idx,
+                obj_id=obj.get("obj_id"),
+                points=obj.get("point_coords"),
+                labels=obj.get("point_labels"),
+                box=obj.get("bbox"),
+            )
+    video_segments = {}
+    start_time = time.time_ns()
+    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
+        inference_state,
+        start_frame_idx=start_frame_idx,
+        max_frame_num_to_track=max_frame_num_to_track,
+    ):
+        video_segments[out_frame_idx] = {
+            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            for i, out_obj_id in enumerate(out_obj_ids)
+        }
+    end_time = time.time_ns()
+    logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+    return video_segments
 
 
 @app.post("/sam/video/")
@@ -631,46 +692,46 @@ async def video_predictor(body: SAMVideoBody):
         is_video=True,
     ).to(device=device)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        logger.info(f"Saving images to {temp_dir}")
-        for idx, b64img in enumerate(body.b64imgs):
-            # Decode the base64 image
-            image_data = base64.b64decode(b64img)
-            image = Image.open(io.BytesIO(image_data))
+    if body.dirname is not None:
+        dir_path = Path(SAMAPI_ROOT_DIR) / "videos" / body.dirname
+        try:
+            video_segments = get_video_segments(
+                predictor,
+                video_path=str(dir_path),
+                objs_dict=body.objs,
+                start_frame_idx=body.start_frame_idx,
+                max_frame_num_to_track=body.max_frame_num_to_track,
+            )
+        finally:
+            shutil.rmtree(dir_path)
+    elif body.b64imgs is not None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logger.info(f"Saving images to {temp_dir}")
+            for idx, b64img in enumerate(body.b64imgs):
+                # Decode the base64 image
+                image_data = base64.b64decode(b64img)
+                image = Image.open(io.BytesIO(image_data))
 
-            # Convert to RGB if the image is grayscale
-            if image.mode == "L":
-                image = image.convert("RGB")
+                # Convert to RGB if the image is grayscale
+                if image.mode == "L":
+                    image = image.convert("RGB")
 
-            # Save the image as JPEG in the temporary directory
-            image_path = os.path.join(temp_dir, f"{idx}.jpg")
-            image.save(image_path, "JPEG")
-        logger.info(f"Saved {len(body.b64imgs)} images to {temp_dir}")
-        inference_state = predictor.init_state(video_path=temp_dir)
-        predictor.reset_state(inference_state)
-        for ann_frame_idx, objs in body.objs.items():
-            for obj in objs:
-                _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-                    inference_state=inference_state,
-                    frame_idx=ann_frame_idx,
-                    obj_id=obj.get("obj_id"),
-                    points=obj.get("point_coords"),
-                    labels=obj.get("point_labels"),
-                    box=obj.get("bbox"),
-                )
-        video_segments = {}
-        start_time = time.time_ns()
-        for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
-            inference_state,
-            start_frame_idx=body.start_frame_idx,
-            max_frame_num_to_track=body.max_frame_num_to_track,
-        ):
-            video_segments[out_frame_idx] = {
-                out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-                for i, out_obj_id in enumerate(out_obj_ids)
-            }
-        end_time = time.time_ns()
-        logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+                # Save the image as JPEG in the temporary directory
+                image_path = os.path.join(temp_dir, f"{idx}.jpg")
+                image.save(image_path, "JPEG")
+            logger.info(f"Saved {len(body.b64imgs)} images to {temp_dir}")
+            video_segments = get_video_segments(
+                predictor,
+                video_path=temp_dir,
+                objs_dict=body.objs,
+                start_frame_idx=body.start_frame_idx,
+                max_frame_num_to_track=body.max_frame_num_to_track,
+            )
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail="Either dirname or b64imgs must be provided.",
+        )
 
     features = []
     for frame_idx, masks in video_segments.items():
