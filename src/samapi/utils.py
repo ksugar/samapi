@@ -1,5 +1,7 @@
 import base64
 import io
+import logging
+import os
 from typing import Tuple
 
 from geojson import Polygon as geojson_polygon
@@ -7,6 +9,17 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon as shapely_polygon
 from skimage import measure
+
+logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
+logger = logging.getLogger("uvicorn")
+
+try:
+    Image.MAX_IMAGE_PIXELS = int(os.getenv("MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS))
+except:
+    logger.warning(
+        "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to decompression bomb attacks."
+    )
+    Image.MAX_IMAGE_PIXELS = None
 
 
 def decode_image(b64data: str):
