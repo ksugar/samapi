@@ -82,6 +82,26 @@ uvicorn samapi.main:app --workers 2 --host 0.0.0.0
 
 For more information, see [uvicorn documentation](https://www.uvicorn.org/#command-line-options).
 
+### Troubleshooting
+
+If you try to process a large image and receive the following error, you may need to increase the `PIL.Image.MAX_IMAGE_PIXELS` value (default: `89478485`), or completely disable it (i.e. set the variable to the empty valie).
+
+```bash
+PIL.Image.DecompressionBombError: Image size (xxxxxxxxx pixels) exceeds limit of 178956970 pixels, could be decompression bomb DOS attack.
+```
+
+In Linux and MacOS, you can set the environment variable as follows.
+
+```bash
+export PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
+```
+
+In Windows, you can set the environment variable as follows.
+
+```cmd
+set PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
+```
+
 ### Request body
 
 #### Endpoint `/sam/` (post)

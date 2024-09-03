@@ -2,22 +2,28 @@
 This is a main.py file for the FastAPI app.
 """
 
+import base64
 from contextlib import redirect_stderr
 from enum import Enum
+from functools import partial
+import io
 from io import TextIOWrapper
 import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 import time
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import warnings
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from geojson import Feature
 import numpy as np
+from PIL import Image
 from pydantic import BaseModel
 from pydantic import Field
 from mobile_sam import (
@@ -29,7 +35,7 @@ from mobile_sam import (
     build_sam_vit_t,
 )
 
-from sam2.build_sam import build_sam2
+from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import torch
@@ -38,7 +44,18 @@ from samapi import __version__
 from samapi.hub_extension import load_state_dict_from_url
 from samapi.utils import decode_image, mask_to_geometry
 
+logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
+
+try:
+    Image.MAX_IMAGE_PIXELS = int(
+        os.getenv("PIL_MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
+    )
+except:
+    logger.warning(
+        "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to decompression bomb attacks."
+    )
+    Image.MAX_IMAGE_PIXELS = None
 
 SAMAPI_ROOT_DIR = os.getenv("SAMAPI_ROOT_DIR", str(Path.home() / ".samapi"))
 
@@ -117,48 +134,28 @@ DEFAULT_CHECKPOINT_URLS = {
 }
 
 
-def build_sam2_l(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_l.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-def build_sam2_bp(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_b+.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-def build_sam2_s(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_s.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
-def build_sam2_t(checkpoint=None):
-    return build_sam2(
-        "sam2_hiera_t.yaml",
-        ckpt_path=checkpoint,
-        device=_get_device(),
-    )
-
-
 sam_model_registry = {
     "default": build_sam_vit_h,
     "vit_h": build_sam_vit_h,
     "vit_l": build_sam_vit_l,
     "vit_b": build_sam_vit_b,
     "vit_t": build_sam_vit_t,
-    "sam2_l": build_sam2_l,
-    "sam2_bp": build_sam2_bp,
-    "sam2_s": build_sam2_s,
-    "sam2_t": build_sam2_t,
+    "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml", device="cpu"),
+    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml", device="cpu"),
+    "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml", device="cpu"),
+    "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml", device="cpu"),
+    "sam2_l_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_l.yaml", device="cpu"
+    ),
+    "sam2_bp_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_b+.yaml", device="cpu"
+    ),
+    "sam2_s_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_s.yaml", device="cpu"
+    ),
+    "sam2_t_v": partial(
+        build_sam2_video_predictor, config_file="sam2_hiera_t.yaml", device="cpu"
+    ),
 }
 
 sam_predictor_registry = {
@@ -174,14 +171,17 @@ sam_predictor_registry = {
 }
 
 
-def get_sam_model(model_type: ModelType, checkpoint_url: Optional[str] = None):
+def get_sam_model(
+    model_type: ModelType, checkpoint_url: Optional[str] = None, is_video: bool = False
+):
     """
     Returns a SAM model.
     :param model_type: Model type.
     :param checkpoint_url: Checkpoint URL.
     :return: SAM model.
     """
-    sam = sam_model_registry[model_type]()
+    model_key = model_type.value + ("_v" if is_video else "")
+    sam = sam_model_registry[model_key]()
     if checkpoint_url is None:
         checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
     state_dict = load_state_dict_from_url(
@@ -604,6 +604,175 @@ async def automatic_mask_generator(body: SAMAutoMaskBody):
     return features
 
 
+@app.post("/sam/upload/")
+async def video_upload(
+    dirname: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """
+    Uploads a file for SAM video predictor.
+    :param body: SAM upload body.
+    """
+    file_path = Path(SAMAPI_ROOT_DIR) / "videos" / dirname / file.filename
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, "wb") as f:
+        f.write(file.file.read())
+    return {"filename": file.filename}
+
+
+class SAMVideoBody(BaseModel):
+    """
+    SAM video predicotr body.
+    """
+
+    type: Optional[ModelType] = ModelType.sam2_t
+    dirname: Optional[str] = None
+    b64imgs: Optional[List[str]] = None
+    axes: str = "XYT"
+    plane_position: Optional[int] = 0
+    start_frame_idx: Optional[int] = None
+    max_frame_num_to_track: Optional[int] = None
+    objs: Optional[Dict[int, List[Dict]]] = Field(
+        example={
+            0: {
+                "obj_id": 0,
+                "point_coords": ((0, 0), (1, 0)),
+                "point_labels": (0, 1),
+                "bbox": [0, 0, 10, 10],
+            }
+        }
+    )
+    checkpoint_url: Optional[str] = None
+
+
+def get_video_segments(
+    predictor: SAM2ImagePredictor,
+    video_path: str,
+    objs_dict: Dict[int, List[Dict]],
+    start_frame_idx: int,
+    max_frame_num_to_track: int,
+):
+    inference_state = predictor.init_state(video_path=video_path)
+    predictor.reset_state(inference_state)
+    for ann_frame_idx, objs in objs_dict.items():
+        for obj in objs:
+            _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+                inference_state=inference_state,
+                frame_idx=ann_frame_idx,
+                obj_id=obj.get("obj_id"),
+                points=obj.get("point_coords"),
+                labels=obj.get("point_labels"),
+                box=obj.get("bbox"),
+            )
+    video_segments = {}
+    start_time = time.time_ns()
+    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
+        inference_state,
+        start_frame_idx=start_frame_idx,
+        max_frame_num_to_track=max_frame_num_to_track,
+    ):
+        video_segments[out_frame_idx] = {
+            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            for i, out_obj_id in enumerate(out_obj_ids)
+        }
+    end_time = time.time_ns()
+    logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+    return video_segments
+
+
+@app.post("/sam/video/")
+async def video_predictor(body: SAMVideoBody):
+    """
+    Generates masks from video automatically using SAM2.
+    :param body: SAM video body.
+    """
+    if body.type not in (
+        ModelType.sam2_l,
+        ModelType.sam2_bp,
+        ModelType.sam2_s,
+        ModelType.sam2_t,
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Only SAM2 models are supported for video prediction.",
+        )
+    predictor = get_sam_model(
+        body.type,
+        body.checkpoint_url,
+        is_video=True,
+    ).to(device=device)
+
+    if body.dirname is not None:
+        dir_path = Path(SAMAPI_ROOT_DIR) / "videos" / body.dirname
+        try:
+            video_segments = get_video_segments(
+                predictor,
+                video_path=str(dir_path),
+                objs_dict=body.objs,
+                start_frame_idx=body.start_frame_idx,
+                max_frame_num_to_track=body.max_frame_num_to_track,
+            )
+        finally:
+            shutil.rmtree(dir_path)
+    elif body.b64imgs is not None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logger.info(f"Saving images to {temp_dir}")
+            for idx, b64img in enumerate(body.b64imgs):
+                # Decode the base64 image
+                image_data = base64.b64decode(b64img)
+                image = Image.open(io.BytesIO(image_data))
+
+                # Convert to RGB if the image is grayscale
+                if image.mode == "L":
+                    image = image.convert("RGB")
+
+                # Save the image as JPEG in the temporary directory
+                image_path = os.path.join(temp_dir, f"{idx}.jpg")
+                image.save(image_path, "JPEG")
+            logger.info(f"Saved {len(body.b64imgs)} images to {temp_dir}")
+            video_segments = get_video_segments(
+                predictor,
+                video_path=temp_dir,
+                objs_dict=body.objs,
+                start_frame_idx=body.start_frame_idx,
+                max_frame_num_to_track=body.max_frame_num_to_track,
+            )
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail="Either dirname or b64imgs must be provided.",
+        )
+
+    features = []
+    for frame_idx, masks in video_segments.items():
+        if body.axes == "XYZ":
+            plane = {
+                "c": -1,
+                "z": frame_idx,
+                "t": body.plane_position,
+            }
+        if body.axes == "XYT":
+            plane = {
+                "c": -1,
+                "z": body.plane_position,
+                "t": frame_idx,
+            }
+        for obj_id, mask in masks.items():
+            geometry = mask_to_geometry(mask[0])
+            geometry["plane"] = plane
+            features.append(
+                Feature(
+                    geometry=geometry,
+                    properties={
+                        "object_idx": obj_id,
+                        "label": "object",
+                        "sam_model": body.type,
+                    },
+                )
+            )
+    return features
+
+
 def _parse_image(body: SAMBody):
     """
     Parses the image.
@@ -612,7 +781,7 @@ def _parse_image(body: SAMBody):
     """
     image = decode_image(body.b64img)
     if image.ndim == 2:
-        image = np.stack((image,) * 3, axis=-1)
+        image = np.stack((image,) * 3, axes=-1)
     return image
 
 
