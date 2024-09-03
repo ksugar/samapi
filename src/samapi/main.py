@@ -130,10 +130,10 @@ sam_model_registry = {
     "vit_l": build_sam_vit_l,
     "vit_b": build_sam_vit_b,
     "vit_t": build_sam_vit_t,
-    "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml"),
-    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml"),
-    "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml"),
-    "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml"),
+    "sam2_l": partial(build_sam2, config_file="sam2_hiera_l.yaml", device="cpu"),
+    "sam2_bp": partial(build_sam2, config_file="sam2_hiera_b+.yaml", device="cpu"),
+    "sam2_s": partial(build_sam2, config_file="sam2_hiera_s.yaml", device="cpu"),
+    "sam2_t": partial(build_sam2, config_file="sam2_hiera_t.yaml", device="cpu"),
     "sam2_l_v": partial(
         build_sam2_video_predictor, config_file="sam2_hiera_l.yaml", device="cpu"
     ),
