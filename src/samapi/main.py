@@ -758,18 +758,19 @@ async def video_predictor(body: SAMVideoBody):
                 "t": frame_idx,
             }
         for obj_id, mask in masks.items():
-            geometry = mask_to_geometry(mask[0])
-            geometry["plane"] = plane
-            features.append(
-                Feature(
-                    geometry=geometry,
-                    properties={
-                        "object_idx": obj_id,
-                        "label": "object",
-                        "sam_model": body.type,
-                    },
+            if np.any(mask):
+                geometry = mask_to_geometry(mask[0])
+                geometry["plane"] = plane
+                features.append(
+                    Feature(
+                        geometry=geometry,
+                        properties={
+                            "object_idx": obj_id,
+                            "label": "object",
+                            "sam_model": body.type,
+                        },
+                    )
                 )
-            )
     return features
 
 
