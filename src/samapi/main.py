@@ -48,7 +48,9 @@ logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
 
 try:
-    Image.MAX_IMAGE_PIXELS = int(os.getenv("MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS))
+    Image.MAX_IMAGE_PIXELS = int(
+        os.getenv("PIL_MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
+    )
 except:
     logger.warning(
         "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to decompression bomb attacks."

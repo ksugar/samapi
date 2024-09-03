@@ -93,13 +93,13 @@ PIL.Image.DecompressionBombError: Image size (xxxxxxxxx pixels) exceeds limit of
 In Linux and MacOS, you can set the environment variable as follows.
 
 ```bash
-export PIL_IMAGE_MAX_IMAGE_PIXELS="" # or specific value (integer)
+export PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
 ```
 
 In Windows, you can set the environment variable as follows.
 
 ```cmd
-set PIL_IMAGE_MAX_IMAGE_PIXELS="" # or specific value (integer)
+set PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
 ```
 
 ### Request body
