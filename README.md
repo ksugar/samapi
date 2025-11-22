@@ -6,7 +6,11 @@
 
 A web API for [SAM](https://github.com/facebookresearch/segment-anything) implemented with [FastAPI](https://fastapi.tiangolo.com).
 
-This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite [the original SAM paper](https://arxiv.org/abs/2304.02643) and [the MobileSAM paper](https://arxiv.org/abs/2306.14289).
+This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite the following papers:
+-  [the original SAM paper](https://arxiv.org/abs/2304.02643)
+-  [the SAM2 paper](https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/)
+-  [the SAM3 paper](https://ai.meta.com/research/publications/sam-3-segment-anything-with-concepts/)
+-  [the MobileSAM paper](https://arxiv.org/abs/2306.14289).
 
 - Sugawara, K. [*Training deep learning models for cell image segmentation with sparse annotations.*](https://biorxiv.org/cgi/content/short/2023.06.13.544786v1) bioRxiv 2023. doi:10.1101/2023.06.13.544786
 
@@ -16,7 +20,7 @@ This is a part of the following paper. Please [cite](#citation) it when you use 
 Create a conda environment.
 
 ```bash
-conda create -n samapi -y python=3.10
+conda create -n samapi -y python=3.12
 conda activate samapi
 ```
 
@@ -30,7 +34,7 @@ If you're using a computer with CUDA-compatible GPU on Windows, install `torch` 
 
 ```bash
 # Windows with CUDA-compatible GPU only
-python -m pip install "torch>=2.3.1,<2.4" torchvision --index-url https://download.pytorch.org/whl/cu118
+python -m pip install "torch==2.7.0" torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
 
 Install `samapi` and its dependencies.
