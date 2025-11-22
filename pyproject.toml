@@ -21,8 +21,8 @@ opencv-python = "^4.7.0.72"
 timm = "^1.0.17"
 gdown = "^5.1.0"
 sam2 = {git = "https://github.com/ksugar/segment-anything-2", branch="support-non-cuda"}
-sam3 = {git = "https://github.com/facebookresearch/sam3", branch="main"}
 setuptools = "^72.1.0"
+einops = "^0.8.1"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"

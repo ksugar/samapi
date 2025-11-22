@@ -16,7 +16,7 @@ import shutil
 import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 import warnings
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -38,6 +38,9 @@ from mobile_sam import (
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
+from sam3.model_builder import build_sam3_image_model
+from sam3.model.box_ops import box_xywh_to_cxcywh
+from sam3.model.sam3_image_processor import Sam3Processor
 import torch
 
 from samapi import __version__
@@ -120,6 +123,7 @@ class ModelType(str, Enum):
     sam2_bp = "sam2_bp"
     sam2_s = "sam2_s"
     sam2_t = "sam2_t"
+    sam3 = "sam3"
 
 
 DEFAULT_CHECKPOINT_URLS = {
@@ -131,6 +135,9 @@ DEFAULT_CHECKPOINT_URLS = {
     ModelType.sam2_bp: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
     ModelType.sam2_s: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
     ModelType.sam2_t: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
+    ModelType.sam3: (
+        str(Path(__file__).parent / "sam3_bpes" / "bpe_simple_vocab_16e6.txt.gz")
+    ),
 }
 
 
@@ -168,6 +175,7 @@ sam_predictor_registry = {
     "sam2_bp": SAM2ImagePredictor,
     "sam2_s": SAM2ImagePredictor,
     "sam2_t": SAM2ImagePredictor,
+    "sam3": Sam3Processor,
 }
 
 
@@ -180,6 +188,10 @@ def get_sam_model(
     :param checkpoint_url: Checkpoint URL.
     :return: SAM model.
     """
+    if model_type in (ModelType.sam3,):
+        if checkpoint_url is None:
+            checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
+        return build_sam3_image_model(bpe_path=checkpoint_url)
     model_key = model_type.value + ("_v" if is_video else "")
     sam = sam_model_registry[model_key]()
     if checkpoint_url is None:
@@ -297,6 +309,7 @@ predictor = sam_predictor_registry[last_sam_type](
     get_sam_model(model_type=last_sam_type).to(device=device)
 )
 last_image = None
+inference_state = None
 
 
 @app.get("/sam/version/", response_class=PlainTextResponse)
@@ -488,6 +501,74 @@ async def predict_sam(body: SAMBody):
                     "object_idx": index_number,
                     "label": "object",
                     "quality": float(quality[index_number]),
+                    "sam_model": body.type,
+                },
+            )
+        )
+    return features
+
+
+class SAM3Body(BaseModel):
+    """
+    SAM3 body.
+    """
+
+    type: Optional[ModelType] = ModelType.vit_h
+    text_prompt: Optional[str] = Field(example="cat")
+    bbox: Optional[Sequence[Tuple[int, int, int, int]]] = Field(example=(0, 0, 0, 0))
+    b64img: str
+    checkpoint_url: Optional[str] = None
+
+
+@app.post("/sam3/")
+async def predict_sam3(body: SAM3Body):
+    """
+    Predicts SAM with prompts.
+    :param body: SAM3 body.
+    """
+    global last_sam_type
+    global last_checkpoint_url
+    global predictor
+    global last_image
+    global inference_state
+    if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
+        predictor = sam_predictor_registry[body.type](
+            get_sam_model(body.type, body.checkpoint_url).to(device=device)
+        )
+        last_sam_type = body.type
+        last_checkpoint_url = body.checkpoint_url
+        last_image = None
+    if last_image != body.b64img:
+        image = _parse_image(body)
+        inference_state = predictor.set_image(image)
+        last_image = body.b64img
+    else:
+        logger.info("Keeping the previous image!")
+    if inference_state is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Inference state is not initialized. Please set the image first.",
+        )
+
+    start_time = time.time_ns()
+    predictor.reset_all_prompts(inference_state)
+    inference_state = predictor.set_text_prompt(
+        state=inference_state,
+        prompt=body.text_prompt,
+    )
+    end_time = time.time_ns()
+    logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+
+    features = []
+    for obj_int, mask in enumerate(inference_state["masks"]):
+        index_number = int(obj_int - 1)
+        features.append(
+            Feature(
+                geometry=mask_to_geometry(mask),
+                properties={
+                    "object_idx": index_number,
+                    "label": "object",
+                    "quality": float(inference_state["scores"][index_number]),
                     "sam_model": body.type,
                 },
             )
