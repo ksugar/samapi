@@ -1,3 +1,0 @@
-[submodule "sam3"]
-	path = sam3
-	url = https://github.com/facebookresearch/sam3.git
