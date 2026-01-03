@@ -4,7 +4,7 @@ version = "0.7.0"
 description = "Segment Anything Model (SAM) API"
 authors = ["Ko Sugawara <ko.sugawara@ens-lyon.fr>"]
 readme = "README.md"
-packages = [{include = "samapi", from = "src"}, {include = "sam2_configs", from = "src"}]
+packages = [{include = "samapi", from = "src"}, {include = "sam2_configs", from = "src"}, {include = "sam3_bpes", from = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12.0,<3.15"
@@ -12,7 +12,7 @@ fastapi = {extras = ["all"], version = "^0.96.0"}
 torch = "^2.7.0"
 mobile_sam = {git = "https://github.com/ksugar/MobileSAM.git"}
 geojson = "^3.0.1"
-pillow = "^9.5.0"
+pillow = "^11.3.0"
 numpy = "^1.23.5"
 scikit-image = "^0.21.0"
 shapely = "^2.0.1"
@@ -21,8 +21,12 @@ opencv-python = "^4.7.0.72"
 timm = "^1.0.17"
 gdown = "^5.1.0"
 sam2 = {git = "https://github.com/ksugar/segment-anything-2", branch="support-non-cuda"}
+sam3 = {git = "https://github.com/facebookresearch/sam3", branch="main"}
 setuptools = "^72.1.0"
 einops = "^0.8.1"
+decord = "^0.6.0"
+pycocotools = "^2.0.10"
+psutil = "^7.1.3"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"
