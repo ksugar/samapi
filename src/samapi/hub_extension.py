@@ -260,26 +260,25 @@ def load_state_dict_from_url(
         cached_file = os.path.join(model_dir, filename)
         if os.path.exists(model_dir + "/.cache"):
             shutil.rmtree(model_dir + "/.cache", ignore_errors=True)
-        return None, cached_file
     else:
         parts = urlparse(url)
         filename = os.path.basename(parts.path)
         if file_name is not None:
             filename = file_name
         cached_file = os.path.join(model_dir, filename)
-    if not os.path.exists(cached_file):
-        sys.stderr.write('Downloading: "{}" to {}\n'.format(url, cached_file))
-        hash_prefix = None
-        if check_hash:
-            r = HASH_REGEX.search(filename)  # r is Optional[Match[str]]
-            hash_prefix = r.group(1) if r else None
-        download_url_to_file(
-            url,
-            cached_file,
-            hash_prefix,
-            progress=progress,
-            cancel_filepath=cancel_filepath,
-        )
+        if not os.path.exists(cached_file):
+            sys.stderr.write('Downloading: "{}" to {}\n'.format(url, cached_file))
+            hash_prefix = None
+            if check_hash:
+                r = HASH_REGEX.search(filename)  # r is Optional[Match[str]]
+                hash_prefix = r.group(1) if r else None
+            download_url_to_file(
+                url,
+                cached_file,
+                hash_prefix,
+                progress=progress,
+                cancel_filepath=cancel_filepath,
+            )
 
     if _is_legacy_zip_format(cached_file):
         return _legacy_zip_load(cached_file, model_dir, map_location)

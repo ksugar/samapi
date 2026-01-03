@@ -348,11 +348,7 @@ def _register_default_weights():
         "Registering default weights. This step may take a while for the first time."
     )
     for model_type, checkpoint_url in DEFAULT_CHECKPOINT_URLS.items():
-        weights = _get_weights_at(Path(SAMAPI_ROOT_DIR) / model_type.name)
-        if not any(w["name"] == DEFAULT_WEIGHT_NAME for w in weights):
-            register_state_dict_from_url(
-                model_type, checkpoint_url, DEFAULT_WEIGHT_NAME
-            )
+        register_state_dict_from_url(model_type, checkpoint_url, DEFAULT_WEIGHT_NAME)
 
 
 # Registers default weights at startup.
