@@ -2,6 +2,7 @@
 This module is an extension module of torch.hub.py, in which the download is cancellable.
 Original code: https://github.com/pytorch/pytorch/blob/49444c3e546bf240bed24a101e747422d1f8a0ee/torch/hub.py
 """
+
 import errno
 import hashlib
 import os
@@ -15,6 +16,7 @@ import warnings
 import torch
 from torch.hub import get_dir, HASH_REGEX, _is_legacy_zip_format, _legacy_zip_load
 from torch.serialization import MAP_LOCATION
+from huggingface_hub import hf_hub_download
 from samapi.gdown_extension import download as gdownload
 
 try:
@@ -67,6 +69,34 @@ except ImportError:
 
 
 GOOGLE_DRIVE_URL = "https://drive.google.com/"
+HUGGINGFACE_URL = "https://huggingface.co/"
+
+
+def parse_hf_url(url: str):
+    """
+    Extract repo_id, filename, and revision from a Hugging Face Hub URL.
+    Works for URLs containing /resolve/, /blob/, /raw/, or /tree/.
+    """
+    parsed = urlparse(url)
+    parts = parsed.path.strip("/").split("/")
+
+    if len(parts) < 4:
+        raise ValueError("Not a valid Hugging Face file URL")
+
+    # Example parts:
+    # ["facebook", "sam3", "resolve", "main", "sam3.pt"]
+    # ["google-bert", "bert-base-uncased", "blob", "main", "config.json"]
+    # ["org", "repo", "resolve", "main", "folder", "file.json"]
+
+    repo_owner = parts[0]
+    repo_name = parts[1]
+    repo_id = f"{repo_owner}/{repo_name}"
+
+    _ = parts[2]  # resolve / blob / raw / tree
+    revision = parts[3]  # branch, tag, or commit hash
+    filename = "/".join(parts[4:])  # supports nested paths
+
+    return repo_id, filename, revision
 
 
 def download_url_to_file(
@@ -219,6 +249,18 @@ def load_state_dict_from_url(
             filename = file_name
         cached_file = os.path.join(model_dir, filename)
         shutil.move(output, cached_file)
+    elif url.startswith(HUGGINGFACE_URL):
+        repo_id, filename, revision = parse_hf_url(url)
+        output = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            revision=revision,
+            local_dir=model_dir,
+        )
+        cached_file = os.path.join(model_dir, filename)
+        if os.path.exists(model_dir + "/.cache"):
+            shutil.rmtree(model_dir + "/.cache", ignore_errors=True)
+        return None, cached_file
     else:
         parts = urlparse(url)
         filename = os.path.basename(parts.path)
