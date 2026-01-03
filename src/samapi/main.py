@@ -553,6 +553,20 @@ class SAM3Body(BaseModel):
     confidence_threshold: float = 0.5
 
 
+def _to_norm_box_cxcywh(bbox_xywh: Tuple[int, int, int, int], width: int, height: int):
+    """
+    Converts bbox from xywh to normalized cxcywh.
+    :param bbox_xywh: Bbox in xywh format.
+    :param width: Image width.
+    :param height: Image height.
+    :return: Normalized bbox in cxcywh format.
+    """
+    box_input_xywh = torch.tensor(bbox_xywh).view(-1, 4)
+    box_input_cxcywh = box_xywh_to_cxcywh(box_input_xywh)
+    norm_box_cxcywh = normalize_bbox(box_input_cxcywh, width, height).flatten().tolist()
+    return norm_box_cxcywh
+
+
 @app.post("/sam/sam3/")
 async def predict_sam3(body: SAM3Body):
     """
@@ -605,18 +619,19 @@ async def predict_sam3(body: SAM3Body):
     logger.info(f"Text prompt set: {body.text_prompt}")
     if body.positive_bboxes is not None:
         logger.info(f"Number of positive boxes: {len(body.positive_bboxes)}")
-        logger.info(f"Positive boxes: {body.positive_bboxes}")
         for bbox in body.positive_bboxes:
-            box_input_xywh = torch.tensor(bbox).view(-1, 4)
-            box_input_cxcywh = box_xywh_to_cxcywh(box_input_xywh)
-            norm_box_cxcywh = (
-                normalize_bbox(box_input_cxcywh, width, height).flatten().tolist()
-            )
-            logger.info(f"Normalized box input: {norm_box_cxcywh}")
             inference_state = predictor.add_geometric_prompt(
                 state=inference_state,
-                box=norm_box_cxcywh,
+                box=_to_norm_box_cxcywh(bbox, width, height),
                 label=True,
+            )
+    if body.negative_bboxes is not None:
+        logger.info(f"Number of negative boxes: {len(body.negative_bboxes)}")
+        for bbox in body.negative_bboxes:
+            inference_state = predictor.add_geometric_prompt(
+                state=inference_state,
+                box=_to_norm_box_cxcywh(bbox, width, height),
+                label=False,
             )
     end_time = time.time_ns()
     logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
