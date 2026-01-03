@@ -273,6 +273,39 @@ def _get_device() -> str:
 device = _get_device()
 
 
+def _get_weights_at(p_model_dir: Path, remove_orphans: bool = True):
+    """
+    Returns a list of the available weights at the given path.
+    :param p_model_dir: Path to the model directory.
+    :param remove_orphans: Whether to remove orphan files.
+    :return: A list of weights.
+    """
+    if not p_model_dir.exists():
+        logger.warning(f"{p_model_dir} does not exist.")
+        return []
+    paths = (p for p in p_model_dir.iterdir() if p.suffix != ".json")
+    weights = []
+    for p in sorted(paths, key=os.path.getmtime):
+        p_json = p.parent / f"{p.stem}.json"
+        if p_json.exists():
+            with open(p_json, encoding="utf-8") as file:
+                metadata = json.load(file)
+            weights.append(
+                {
+                    "type": metadata["type"],
+                    "name": metadata["name"],
+                    "url": metadata["url"],
+                }
+            )
+        else:
+            logger.warning(
+                f"{p_json} is not found. {'Remove' if remove_orphans else 'Skip'} {p}."
+            )
+            if remove_orphans:
+                p.unlink()
+    return weights
+
+
 def register_state_dict_from_url(model_type: ModelType, url: str, name: str) -> bool:
     """
     Registers a state dict from URL.
@@ -353,39 +386,6 @@ class SAMWeightsBody(BaseModel):
     type: ModelType
     name: str
     url: str
-
-
-def _get_weights_at(p_model_dir: Path, remove_orphans: bool = True):
-    """
-    Returns a list of the available weights at the given path.
-    :param p_model_dir: Path to the model directory.
-    :param remove_orphans: Whether to remove orphan files.
-    :return: A list of weights.
-    """
-    if not p_model_dir.exists():
-        logger.warning(f"{p_model_dir} does not exist.")
-        return []
-    paths = (p for p in p_model_dir.iterdir() if p.suffix != ".json")
-    weights = []
-    for p in sorted(paths, key=os.path.getmtime):
-        p_json = p.parent / f"{p.stem}.json"
-        if p_json.exists():
-            with open(p_json, encoding="utf-8") as file:
-                metadata = json.load(file)
-            weights.append(
-                {
-                    "type": metadata["type"],
-                    "name": metadata["name"],
-                    "url": metadata["url"],
-                }
-            )
-        else:
-            logger.warning(
-                f"{p_json} is not found. {'Remove' if remove_orphans else 'Skip'} {p}."
-            )
-            if remove_orphans:
-                p.unlink()
-    return weights
 
 
 @app.get("/sam/weights/")
