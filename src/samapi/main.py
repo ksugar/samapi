@@ -45,7 +45,7 @@ import torch
 
 from samapi import __version__
 from samapi.hub_extension import load_state_dict_from_url
-from samapi.utils import decode_image, mask_to_geometry
+from samapi.utils import decode_image, mask_to_geometry, normalize_bbox
 
 logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
@@ -54,9 +54,10 @@ try:
     Image.MAX_IMAGE_PIXELS = int(
         os.getenv("PIL_MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
     )
-except:
+except TypeError:
     logger.warning(
-        "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to decompression bomb attacks."
+        "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to "
+        + "decompression bomb attacks."
     )
     Image.MAX_IMAGE_PIXELS = None
 
@@ -65,6 +66,11 @@ SAMAPI_ROOT_DIR = os.getenv("SAMAPI_ROOT_DIR", str(Path.home() / ".samapi"))
 
 SAMAPI_STDERR = SAMAPI_ROOT_DIR + "/samapi.stderr"
 SAMAPI_CANCEL_FILE = SAMAPI_ROOT_DIR + "/samapi.cancel"
+
+SAM3_BPE_FILE = os.getenv(
+    "SAM3_BPE_FILE",
+    str(Path(__file__).parent.parent / "sam3_bpes" / "bpe_simple_vocab_16e6.txt.gz"),
+)
 
 
 class ProgressIO(TextIOWrapper):
@@ -135,9 +141,7 @@ DEFAULT_CHECKPOINT_URLS = {
     ModelType.sam2_bp: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
     ModelType.sam2_s: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
     ModelType.sam2_t: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
-    ModelType.sam3: (
-        str(Path(__file__).parent / "sam3_bpes" / "bpe_simple_vocab_16e6.txt.gz")
-    ),
+    ModelType.sam3: "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt",
 }
 
 
@@ -191,7 +195,16 @@ def get_sam_model(
     if model_type in (ModelType.sam3,):
         if checkpoint_url is None:
             checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
-        return build_sam3_image_model(bpe_path=checkpoint_url)
+        checkpoint_path = load_state_dict_from_url(
+            url=checkpoint_url,
+            model_dir=str(Path(SAMAPI_ROOT_DIR) / model_type.name),
+            cancel_filepath=SAMAPI_CANCEL_FILE,
+            map_location=torch.device("cpu"),
+        )[1]
+        return build_sam3_image_model(
+            bpe_path=SAM3_BPE_FILE,
+            checkpoint_path=checkpoint_path,
+        )
     model_key = model_type.value + ("_v" if is_video else "")
     sam = sam_model_registry[model_key]()
     if checkpoint_url is None:
@@ -248,7 +261,8 @@ def _get_device() -> str:
             )
         except Exception as e:
             warnings.warn(
-                f"{device} device found but got the error {str(e)} - using CPU for inference"
+                f"{device} device found but got the error {str(e)} "
+                + "- using CPU for inference"
             )
             device = "cpu"
     return device
@@ -296,7 +310,7 @@ def _register_default_weights():
     Registers default weights.
     """
     for model_type, checkpoint_url in DEFAULT_CHECKPOINT_URLS.items():
-        register_state_dict_from_url(model_type, checkpoint_url, f"default")
+        register_state_dict_from_url(model_type, checkpoint_url, "default")
 
 
 # Registers default weights at startup.
@@ -310,6 +324,7 @@ predictor = sam_predictor_registry[last_sam_type](
 )
 last_image = None
 inference_state = None
+last_confidence_threshold = 0.5
 
 
 @app.get("/sam/version/", response_class=PlainTextResponse)
@@ -390,11 +405,17 @@ async def register_weights(body: SAMWeightsBody):
     weights = _get_weights_at(Path(SAMAPI_ROOT_DIR) / body.type.name)
     for weight in weights:
         if weight["name"] == body.name:
-            message = f"Model file with the name '{body.name}' already exists. Skip registration."
+            message = (
+                f"Model file with the name '{body.name}' already exists. "
+                + "Skip registration."
+            )
             logger.warning(message)
             break
         if weight["url"] == body.url:
-            message = f"Model file with the url '{body.url}' already exists. Skip registration."
+            message = (
+                f"Model file with the url '{body.url}' already exists. "
+                + "Skip registration."
+            )
             logger.warning(message)
             break
     else:
@@ -515,12 +536,19 @@ class SAM3Body(BaseModel):
 
     type: Optional[ModelType] = ModelType.vit_h
     text_prompt: Optional[str] = Field(example="cat")
-    bbox: Optional[Sequence[Tuple[int, int, int, int]]] = Field(example=(0, 0, 0, 0))
+    positive_bboxes: Optional[Sequence[Tuple[int, int, int, int]]] = Field(
+        example=[(0, 0, 0, 0)]
+    )
+    negative_bboxes: Optional[Sequence[Tuple[int, int, int, int]]] = Field(
+        example=[(0, 0, 0, 0)]
+    )
     b64img: str
     checkpoint_url: Optional[str] = None
+    reset_prompts: bool = False
+    confidence_threshold: float = 0.5
 
 
-@app.post("/sam3/")
+@app.post("/sam/sam3/")
 async def predict_sam3(body: SAM3Body):
     """
     Predicts SAM with prompts.
@@ -531,6 +559,7 @@ async def predict_sam3(body: SAM3Body):
     global predictor
     global last_image
     global inference_state
+    global last_confidence_threshold
     if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
         predictor = sam_predictor_registry[body.type](
             get_sam_model(body.type, body.checkpoint_url).to(device=device)
@@ -539,7 +568,10 @@ async def predict_sam3(body: SAM3Body):
         last_checkpoint_url = body.checkpoint_url
         last_image = None
     if last_image != body.b64img:
-        image = _parse_image(body)
+        image_data = base64.b64decode(body.b64img)
+        image = Image.open(io.BytesIO(image_data))
+        # log image size and type
+        logger.info(f"Image size: {image.size}, mode: {image.mode}")
         inference_state = predictor.set_image(image)
         last_image = body.b64img
     else:
@@ -549,22 +581,49 @@ async def predict_sam3(body: SAM3Body):
             status_code=500,
             detail="Inference state is not initialized. Please set the image first.",
         )
+    width = inference_state["original_width"]
+    height = inference_state["original_height"]
 
     start_time = time.time_ns()
-    predictor.reset_all_prompts(inference_state)
+    if body.reset_prompts:
+        predictor.reset_all_prompts(inference_state)
+    if last_confidence_threshold != body.confidence_threshold:
+        predictor.set_confidence_threshold(
+            body.confidence_threshold,
+            inference_state,
+        )
+        last_confidence_threshold = body.confidence_threshold
     inference_state = predictor.set_text_prompt(
         state=inference_state,
         prompt=body.text_prompt,
     )
+    logger.info(f"Text prompt set: {body.text_prompt}")
+    if body.positive_bboxes is not None:
+        logger.info(f"Number of positive boxes: {len(body.positive_bboxes)}")
+        logger.info(f"Positive boxes: {body.positive_bboxes}")
+        for bbox in body.positive_bboxes:
+            box_input_xywh = torch.tensor(bbox).view(-1, 4)
+            box_input_cxcywh = box_xywh_to_cxcywh(box_input_xywh)
+            norm_box_cxcywh = (
+                normalize_bbox(box_input_cxcywh, width, height).flatten().tolist()
+            )
+            logger.info(f"Normalized box input: {norm_box_cxcywh}")
+            inference_state = predictor.add_geometric_prompt(
+                state=inference_state,
+                box=norm_box_cxcywh,
+                label=True,
+            )
     end_time = time.time_ns()
     logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
 
     features = []
+    logger.info(f"Number of masks: {len(inference_state['masks'])}")
+
     for obj_int, mask in enumerate(inference_state["masks"]):
         index_number = int(obj_int - 1)
         features.append(
             Feature(
-                geometry=mask_to_geometry(mask),
+                geometry=mask_to_geometry(mask.squeeze(0).cpu()),
                 properties={
                     "object_idx": index_number,
                     "label": "object",
