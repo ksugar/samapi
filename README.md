@@ -24,14 +24,8 @@ conda create -n samapi -y python=3.12
 conda activate samapi
 ```
 
-If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
-
-```bash
-conda install -c conda-forge -y cudatoolkit=11.8
-```
-
-If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support with the following command.
-
+Install PyTorch and torchvision.
+# 
 ```bash
 # Windows with CUDA-compatible GPU only
 python -m pip install "torch==2.7.0" torchvision --index-url https://download.pytorch.org/whl/cu126
@@ -58,6 +52,11 @@ python -m pip install -U git+https://github.com/ksugar/samapi.git
 ```
 
 ## Usage
+
+### Login to Hugging Face (Optional: required for SAM3)
+```bash
+curl -LsSf https://hf.co/cli/install.sh | bash
+```
 
 ### Launch a server
 
