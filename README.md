@@ -6,7 +6,11 @@
 
 A web API for [SAM](https://github.com/facebookresearch/segment-anything) implemented with [FastAPI](https://fastapi.tiangolo.com).
 
-This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite [the original SAM paper](https://arxiv.org/abs/2304.02643) and [the MobileSAM paper](https://arxiv.org/abs/2306.14289).
+This is a part of the following paper. Please [cite](#citation) it when you use this project. You will also cite the following papers:
+-  [the original SAM paper](https://arxiv.org/abs/2304.02643)
+-  [the SAM2 paper](https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/)
+-  [the SAM3 paper](https://ai.meta.com/research/publications/sam-3-segment-anything-with-concepts/)
+-  [the MobileSAM paper](https://arxiv.org/abs/2306.14289).
 
 - Sugawara, K. [*Training deep learning models for cell image segmentation with sparse annotations.*](https://biorxiv.org/cgi/content/short/2023.06.13.544786v1) bioRxiv 2023. doi:10.1101/2023.06.13.544786
 
@@ -16,21 +20,15 @@ This is a part of the following paper. Please [cite](#citation) it when you use 
 Create a conda environment.
 
 ```bash
-conda create -n samapi -y python=3.10
+conda create -n samapi -y python=3.12
 conda activate samapi
 ```
 
-If you're using a computer with CUDA-compatible GPU, install `cudatoolkit`.
-
-```bash
-conda install -c conda-forge -y cudatoolkit=11.8
-```
-
-If you're using a computer with CUDA-compatible GPU on Windows, install `torch` with GPU-support with the following command.
-
+Install PyTorch and torchvision.
+# 
 ```bash
 # Windows with CUDA-compatible GPU only
-python -m pip install "torch>=2.3.1,<2.4" torchvision --index-url https://download.pytorch.org/whl/cu118
+python -m pip install "torch==2.7.0" torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
 
 Install `samapi` and its dependencies.
@@ -54,6 +52,11 @@ python -m pip install -U git+https://github.com/ksugar/samapi.git
 ```
 
 ## Usage
+
+### Login to Hugging Face (Optional: required for SAM3)
+```bash
+curl -LsSf https://hf.co/cli/install.sh | bash
+```
 
 ### Launch a server
 
@@ -101,6 +104,9 @@ In Windows, you can set the environment variable as follows.
 ```cmd
 set PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
 ```
+
+### Known issues
+- SAM3 video predictor does not work with negative bbox prompts. See https://github.com/facebookresearch/sam3/issues/335.
 
 ### Request body
 
@@ -175,7 +181,7 @@ Returns the version of the SAM API.
 The version of the SAM API.
 
 ```plaintext
-0.4.1
+0.7.0
 ```
 
 #### Endpoint `/sam/weights/` (get)
@@ -252,6 +258,16 @@ The progress.
 | percent | Integer value in [0, 100].         |
 
 ## Updates
+
+### v0.7.0
+
+- Supprt [SAM3](https://github.com/facebookresearch/sam3) image predictor and video predictor.
+- Require Python `3.12` and update `torch`/`torchvision` to newer releases.
+
+### v0.6.0
+
+- Support [SAM2](https://ai.meta.com/sam2/) video predictor.
+- Make PIL.Image.MAX_IMAGE_PIXELS adjustable by an environment variable. See details in [Usage > Troubleshooting](#troubleshooting).
 
 ### v0.5.0
 

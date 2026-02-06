@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon as shapely_polygon
 from skimage import measure
+import torch
 
 logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
@@ -17,9 +18,10 @@ try:
     Image.MAX_IMAGE_PIXELS = int(
         os.getenv("PIL_MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
     )
-except:
+except (TypeError, ValueError):
     logger.warning(
-        "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to decompression bomb attacks."
+        "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system "
+        + "to decompression bomb attacks."
     )
     Image.MAX_IMAGE_PIXELS = None
 
@@ -45,7 +47,7 @@ def mask_to_geometry(
             pixels.append(len(item))
         try:
             index = np.argmax(pixels)
-        except:
+        except ValueError:
             return geojson_polygon([])
     contour = contours_find[index]
     contour -= 1  # reset padding
@@ -61,3 +63,41 @@ def mask_to_geometry(
         )
         contour_asList = list(poly_shapely_simple.exterior.coords)
     return geojson_polygon([contour_asList])
+
+
+def normalize_bbox(bbox_xywh, img_w, img_h):
+    # Assumes bbox_xywh is in XYWH format
+    if isinstance(bbox_xywh, list):
+        assert len(bbox_xywh) == 4, (
+            "bbox_xywh list must have 4 elements. "
+            + "Batching not support except for torch tensors."
+        )
+        normalized_bbox = bbox_xywh.copy()
+        normalized_bbox[0] /= img_w
+        normalized_bbox[1] /= img_h
+        normalized_bbox[2] /= img_w
+        normalized_bbox[3] /= img_h
+    else:
+        assert isinstance(
+            bbox_xywh, torch.Tensor
+        ), "Only torch tensors are supported for batching."
+        normalized_bbox = bbox_xywh.clone()
+        assert (
+            normalized_bbox.size(-1) == 4
+        ), "bbox_xywh tensor must have last dimension of size 4."
+        normalized_bbox[..., 0] /= img_w
+        normalized_bbox[..., 1] /= img_h
+        normalized_bbox[..., 2] /= img_w
+        normalized_bbox[..., 3] /= img_h
+    return normalized_bbox
+
+
+def prepare_masks_for_visualization(frame_to_output):
+    # frame_to_obj_masks --> {frame_idx: {'output_probs': np.array, `out_obj_ids`: np.array, `out_binary_masks`: np.array}}
+    for frame_idx, out in frame_to_output.items():
+        _processed_out = {}
+        for idx, obj_id in enumerate(out["out_obj_ids"].tolist()):
+            if out["out_binary_masks"][idx].any():
+                _processed_out[obj_id] = out["out_binary_masks"][idx]
+        frame_to_output[frame_idx] = _processed_out
+    return frame_to_output
