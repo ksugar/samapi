@@ -105,6 +105,9 @@ In Windows, you can set the environment variable as follows.
 set PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
 ```
 
+### Known issues
+- SAM3 video predictor does not work with negative bbox prompts. See https://github.com/facebookresearch/sam3/issues/335.
+
 ### Request body
 
 #### Endpoint `/sam/` (post)
@@ -178,7 +181,7 @@ Returns the version of the SAM API.
 The version of the SAM API.
 
 ```plaintext
-0.4.1
+0.7.0
 ```
 
 #### Endpoint `/sam/weights/` (get)
@@ -255,6 +258,16 @@ The progress.
 | percent | Integer value in [0, 100].         |
 
 ## Updates
+
+### v0.7.0
+
+- Supprt [SAM3](https://github.com/facebookresearch/sam3) image predictor and video predictor.
+- Require Python `3.12` and update `torch`/`torchvision` to newer releases.
+
+### v0.6.0
+
+- Support [SAM2](https://ai.meta.com/sam2/) video predictor.
+- Make PIL.Image.MAX_IMAGE_PIXELS adjustable by an environment variable. See details in [Usage > Troubleshooting](#troubleshooting).
 
 ### v0.5.0
 
