@@ -13,6 +13,7 @@
                 "src.samapi.main:app",
                 "--workers=2",
                 "--host=0.0.0.0",
+                "--port=8001",
                 "--reload"
             ],
             "jinja": true,
@@ -20,6 +21,7 @@
             "env": {
                 "PYTORCH_ENABLE_MPS_FALLBACK": "1",
                 "LOGLEVEL": "debug",
+                "LOG_LEVEL": "debug",
                 "PIL_MAX_IMAGE_PIXELS": "",
             }
         }

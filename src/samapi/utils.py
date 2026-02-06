@@ -18,7 +18,7 @@ try:
     Image.MAX_IMAGE_PIXELS = int(
         os.getenv("PIL_MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
     )
-except TypeError:
+except (TypeError, ValueError):
     logger.warning(
         "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system "
         + "to decompression bomb attacks."
@@ -90,3 +90,14 @@ def normalize_bbox(bbox_xywh, img_w, img_h):
         normalized_bbox[..., 2] /= img_w
         normalized_bbox[..., 3] /= img_h
     return normalized_bbox
+
+
+def prepare_masks_for_visualization(frame_to_output):
+    # frame_to_obj_masks --> {frame_idx: {'output_probs': np.array, `out_obj_ids`: np.array, `out_binary_masks`: np.array}}
+    for frame_idx, out in frame_to_output.items():
+        _processed_out = {}
+        for idx, obj_id in enumerate(out["out_obj_ids"].tolist()):
+            if out["out_binary_masks"][idx].any():
+                _processed_out[obj_id] = out["out_binary_masks"][idx]
+        frame_to_output[frame_idx] = _processed_out
+    return frame_to_output

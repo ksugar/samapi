@@ -38,23 +38,32 @@ from mobile_sam import (
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-from sam3.model_builder import build_sam3_image_model
+from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
 from sam3.model.box_ops import box_xywh_to_cxcywh
 from sam3.model.sam3_image_processor import Sam3Processor
+from sam3.model.sam3_video_predictor import Sam3VideoPredictor
 import torch
 
 from samapi import __version__
 from samapi.hub_extension import load_state_dict_from_url
-from samapi.utils import decode_image, mask_to_geometry, normalize_bbox
+from samapi.utils import (
+    decode_image,
+    mask_to_geometry,
+    normalize_bbox,
+    prepare_masks_for_visualization,
+)
 
 logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
+if os.getenv("LOG_LEVEL", "INFO").upper() == "DEBUG":
+    # log all debug messages
+    logger.setLevel(logging.DEBUG)
 
 try:
     Image.MAX_IMAGE_PIXELS = int(
         os.getenv("PIL_MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
     )
-except TypeError:
+except (TypeError, ValueError):
     logger.warning(
         "PIL.Image.MAX_IMAGE_PIXELS is set to None, potentially exposing the system to "
         + "decompression bomb attacks."
@@ -203,10 +212,17 @@ def get_sam_model(
             cancel_filepath=SAMAPI_CANCEL_FILE,
             map_location=torch.device("cpu"),
         )[1]
-        return build_sam3_image_model(
-            bpe_path=SAM3_BPE_FILE,
-            checkpoint_path=checkpoint_path,
-        )
+        if is_video:
+            return build_sam3_video_predictor(
+                bpe_path=SAM3_BPE_FILE,
+                checkpoint_path=checkpoint_path,
+                apply_temporal_disambiguation=False,
+            )
+        else:
+            return build_sam3_image_model(
+                bpe_path=SAM3_BPE_FILE,
+                checkpoint_path=checkpoint_path,
+            )
     model_key = model_type.value + ("_v" if is_video else "")
     sam = sam_model_registry[model_key]()
     if checkpoint_url is None:
@@ -920,6 +936,226 @@ async def video_predictor(body: SAMVideoBody):
         for obj_id, mask in masks.items():
             if np.any(mask):
                 geometry = mask_to_geometry(mask[0])
+                geometry["plane"] = plane
+                features.append(
+                    Feature(
+                        geometry=geometry,
+                        properties={
+                            "object_idx": obj_id,
+                            "label": "object",
+                            "sam_model": body.type,
+                        },
+                    )
+                )
+    return features
+
+
+class SAM3VideoBody(BaseModel):
+    """
+    SAM3 video predicotr body.
+    """
+
+    type: Optional[ModelType] = ModelType.sam2_t
+    dirname: Optional[str] = None
+    b64imgs: Optional[List[str]] = None
+    axes: str = "XYT"
+    plane_position: Optional[int] = 0
+    start_frame_idx: Optional[int] = None
+    max_frame_num_to_track: Optional[int] = None
+    objs: Optional[Dict[int, List[Dict]]] = Field(
+        example={
+            0: [
+                {
+                    "obj_id": 0,
+                    "text": "cell",
+                    "boxes_xywh": [[0, 0, 10, 10], [10, 10, 5, 5]],
+                    "box_labels": (0, 1),
+                }
+            ]
+        }
+    )
+    checkpoint_url: Optional[str] = None
+
+
+def propagate_in_video(
+    predictor,
+    session_id,
+    start_frame_index=0,
+    max_frame_num_to_track=None,
+):
+    # we will just propagate from frame 0 to the end of the video
+    outputs_per_frame = {}
+    for response in predictor.handle_stream_request(
+        request=dict(
+            type="propagate_in_video",
+            session_id=session_id,
+            propagation_direction="both",
+            start_frame_index=start_frame_index,
+            max_frame_num_to_track=max_frame_num_to_track,
+        )
+    ):
+        outputs_per_frame[response["frame_index"]] = response["outputs"]
+
+    return outputs_per_frame
+
+
+def get_sam3_video_segments(
+    predictor: Sam3VideoPredictor,
+    video_path: str,
+    objs_dict: Dict[int, List[Dict]],
+    start_frame_idx: int,
+    max_frame_num_to_track: int,
+):
+    # Initialize session
+    response = predictor.handle_request(
+        request=dict(
+            type="start_session",
+            resource_path=video_path,
+        )
+    )
+    session_id = response["session_id"]
+
+    try:
+        # Get image size
+        session = predictor._get_session(session_id=session_id)
+        inference_state = session["state"]
+        width = inference_state["orig_width"]
+        height = inference_state["orig_height"]
+
+        # Reset session
+        _ = predictor.handle_request(
+            request=dict(
+                type="reset_session",
+                session_id=session_id,
+            )
+        )
+
+        # Add prompts
+        logger.debug(f"Adding prompts: {objs_dict}")
+        for ann_frame_idx, objs in objs_dict.items():
+            for obj in objs:
+                logger.debug(f"Adding prompt at frame {ann_frame_idx}: {obj}")
+                norm_boxes = list(
+                    map(
+                        lambda box: normalize_bbox(box, width, height),
+                        obj.get("boxes_xywh", None),
+                    )
+                )
+                logger.debug(f"Normalized boxes: {norm_boxes}")
+                response = predictor.handle_request(
+                    request=dict(
+                        type="add_prompt",
+                        session_id=session_id,
+                        frame_index=ann_frame_idx,
+                        text=obj.get("text", None),
+                        points=None,
+                        point_labels=None,
+                        bounding_boxes=norm_boxes,
+                        bounding_box_labels=obj.get("box_labels", None),
+                        obj_id=obj.get("obj_id", None),
+                    )
+                )
+                out = response["outputs"]
+                logger.debug(f"Outputs after adding prompt: {out}")
+
+        # Propagate in video
+        start_time = time.time_ns()
+        outputs_per_frame = propagate_in_video(
+            predictor,
+            session_id,
+            start_frame_idx,
+            max_frame_num_to_track,
+        )
+        outputs_per_frame = prepare_masks_for_visualization(outputs_per_frame)
+        logger.debug(f"Outputs per frame: {outputs_per_frame}")
+        end_time = time.time_ns()
+        logger.info(f"Prediction time: {(end_time - start_time) / 1e6:.1f} ms")
+    finally:
+        _ = predictor.handle_request(
+            request=dict(
+                type="close_session",
+                session_id=session_id,
+            )
+        )
+        predictor.shutdown()
+    return outputs_per_frame
+
+
+@app.post("/sam/sam3video/")
+async def sam3_video_predictor(body: SAM3VideoBody):
+    """
+    Generates masks from video automatically using SAM3.
+    :param body: SAM3 video body.
+    """
+    if body.type not in (ModelType.sam3,):
+        raise HTTPException(
+            status_code=404,
+            detail="Only SAM3 models are supported for SAM3 video prediction.",
+        )
+    predictor = get_sam_model(
+        body.type,
+        body.checkpoint_url,
+        is_video=True,
+    )
+
+    predictor.model.score_threshold_detection = 0.5
+
+    if body.dirname is not None:
+        dir_path = Path(SAMAPI_ROOT_DIR) / "videos" / body.dirname
+        try:
+            video_segments = get_sam3_video_segments(
+                predictor,
+                video_path=str(dir_path),
+                objs_dict=body.objs,
+                start_frame_idx=body.start_frame_idx,
+                max_frame_num_to_track=body.max_frame_num_to_track,
+            )
+        finally:
+            shutil.rmtree(dir_path)
+    elif body.b64imgs is not None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logger.info(f"Saving images to {temp_dir}")
+            for idx, b64img in enumerate(body.b64imgs):
+                # Decode the base64 image
+                image_data = base64.b64decode(b64img)
+                image = Image.open(io.BytesIO(image_data))
+
+                # Convert to RGB if the image is grayscale
+                if image.mode == "L":
+                    image = image.convert("RGB")
+
+                # Save the image as JPEG in the temporary directory
+                image_path = os.path.join(temp_dir, f"{idx}.jpg")
+                image.save(image_path, "JPEG")
+            logger.info(f"Saved {len(body.b64imgs)} images to {temp_dir}")
+            video_segments = get_sam3_video_segments(
+                predictor,
+                video_path=str(temp_dir),
+                objs_dict=body.objs,
+            )
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail="Either dirname or b64imgs must be provided.",
+        )
+    logger.debug(f"Video segments: {video_segments}")
+    features = []
+    for frame_idx, masks in video_segments.items():
+        if body.axes == "XYZ":
+            plane = {
+                "c": -1,
+                "z": frame_idx,
+                "t": body.plane_position,
+            }
+        if body.axes == "XYT":
+            plane = {
+                "c": -1,
+                "z": body.plane_position,
+                "t": frame_idx,
+            }
+        for obj_id, mask in masks.items():
+            if np.any(mask):
+                geometry = mask_to_geometry(mask)
                 geometry["plane"] = plane
                 features.append(
                     Feature(
