@@ -54,15 +54,50 @@ If you want to update the samapi server, run the following command in the conda 
 python -m pip install -U git+https://github.com/ksugar/samapi.git
 ```
 
-## Usage
+## Pre-requisites for SAM3
+
+> [!NOTE]
+> SAM3 access on Hugging Face is gated by Meta. To use SAM3, you must [request access](https://huggingface.co/facebook/sam3) to the model. However, since v0.7.1, the samapi server can still run without SAM3 using other models (SAM, SAM2, MobileSAM).
+
+The following steps are required only when you want to use SAM3.
 
 ### Login to Hugging Face (Optional: required for SAM3)
+
+You need to install the [Hugging Face CLI](https://huggingface.co/docs/huggingface-cli/index) and login to your Hugging Face account to access SAM3 weights.
+
+#### Install Hugging Face CLI on macOS and Linux:
 ```bash
 curl -LsSf https://hf.co/cli/install.sh | bash
 ```
 
-> [!NOTE]
-> SAM3 access on Hugging Face is gated by Meta. To use SAM3, you must [request access](https://huggingface.co/facebook/sam3) to the model. However, since v0.7.1, the server can run without SAM3 using other models (SAM, SAM2, MobileSAM).
+#### Install Hugging Face CLI on Windows (PowerShell):
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://hf.co/cli/install.ps1 | iex"
+```
+
+#### Login to Hugging Face:
+```bash
+hf auth login
+```
+
+Enter your token generated at https://huggingface.co/settings/tokens when prompted as follows:
+
+```powershell
+
+    _|    _|  _|    _|    _|_|_|    _|_|_|  _|_|_|  _|      _|    _|_|_|      _|_|_|_|    _|_|      _|_|_|  _|_|_|_|
+    _|    _|  _|    _|  _|        _|          _|    _|_|    _|  _|            _|        _|    _|  _|        _|
+    _|_|_|_|  _|    _|  _|  _|_|  _|  _|_|    _|    _|  _|  _|  _|  _|_|      _|_|_|    _|_|_|_|  _|        _|_|_|
+    _|    _|  _|    _|  _|    _|  _|    _|    _|    _|    _|_|  _|    _|      _|        _|    _|  _|        _|
+    _|    _|    _|_|      _|_|_|    _|_|_|  _|_|_|  _|      _|    _|_|_|      _|        _|    _|    _|_|_|  _|_|_|_|
+
+    To log in, `huggingface_hub` requires a token generated from https://huggingface.co/settings/tokens .
+Token can be pasted using 'Right-Click'.
+Enter your token (input will not be visible):
+```
+
+If you are asked to add the token to your Git credentials, you can choose `y`.
+
+## Usage
 
 ### Launch a server
 
