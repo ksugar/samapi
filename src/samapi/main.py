@@ -38,10 +38,6 @@ from mobile_sam import (
 from sam2.build_sam import build_sam2, build_sam2_video_predictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
-from sam3.model.box_ops import box_xywh_to_cxcywh
-from sam3.model.sam3_image_processor import Sam3Processor
-from sam3.model.sam3_video_predictor import Sam3VideoPredictor
 import torch
 
 from samapi import __version__
@@ -52,6 +48,22 @@ from samapi.utils import (
     normalize_bbox,
     prepare_masks_for_visualization,
 )
+
+# SAM3 is optional and may not be available due to gating on HuggingFace
+SAM3_AVAILABLE = False
+try:
+    from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
+    from sam3.model.box_ops import box_xywh_to_cxcywh
+    from sam3.model.sam3_image_processor import Sam3Processor
+    from sam3.model.sam3_video_predictor import Sam3VideoPredictor
+
+    SAM3_AVAILABLE = True
+except (ImportError, ModuleNotFoundError) as e:
+    logger_init = logging.getLogger("uvicorn")
+    logger_init.warning(
+        "SAM3 is not available. The server will continue without SAM3 support."
+        f"Error: {e}",
+    )
 
 logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
 logger = logging.getLogger("uvicorn")
@@ -140,7 +152,7 @@ class ModelType(str, Enum):
     sam2_bp = "sam2_bp"
     sam2_s = "sam2_s"
     sam2_t = "sam2_t"
-    sam3 = "sam3"
+    sam3 = "sam3"  # Optional; may not be available due to HuggingFace gating
 
 
 DEFAULT_CHECKPOINT_URLS = {
@@ -152,8 +164,11 @@ DEFAULT_CHECKPOINT_URLS = {
     ModelType.sam2_bp: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
     ModelType.sam2_s: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
     ModelType.sam2_t: "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
-    ModelType.sam3: "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt",
 }
+if SAM3_AVAILABLE:
+    DEFAULT_CHECKPOINT_URLS[ModelType.sam3] = (
+        "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
+    )
 
 
 sam_model_registry = {
@@ -179,6 +194,9 @@ sam_model_registry = {
         build_sam2_video_predictor, config_file="sam2_hiera_t.yaml", device="cpu"
     ),
 }
+if SAM3_AVAILABLE:
+    # Note: SAM3 model building will be done in get_sam_model()
+    pass
 
 sam_predictor_registry = {
     "default": SamPredictor,
@@ -190,8 +208,9 @@ sam_predictor_registry = {
     "sam2_bp": SAM2ImagePredictor,
     "sam2_s": SAM2ImagePredictor,
     "sam2_t": SAM2ImagePredictor,
-    "sam3": Sam3Processor,
 }
+if SAM3_AVAILABLE:
+    sam_predictor_registry["sam3"] = Sam3Processor
 
 
 def get_sam_model(
@@ -204,6 +223,15 @@ def get_sam_model(
     :return: SAM model.
     """
     if model_type in (ModelType.sam3,):
+        if not SAM3_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "SAM3 is not available. Please ensure SAM3 dependencies are "
+                    "installed and access to the SAM3 model on HuggingFace has "
+                    "been granted."
+                ),
+            )
         if checkpoint_url is None:
             checkpoint_url = DEFAULT_CHECKPOINT_URLS[model_type]
         checkpoint_path = load_state_dict_from_url(
@@ -364,7 +392,17 @@ def _register_default_weights():
         "Registering default weights. This step may take a while for the first time."
     )
     for model_type, checkpoint_url in DEFAULT_CHECKPOINT_URLS.items():
-        register_state_dict_from_url(model_type, checkpoint_url, DEFAULT_WEIGHT_NAME)
+        try:
+            register_state_dict_from_url(
+                model_type, checkpoint_url, DEFAULT_WEIGHT_NAME
+            )
+        except Exception as e:
+            # Log the error but continue; some models may not be available due to gating
+            logger.warning(
+                f"Failed to register weights for {model_type}: "
+                f"{type(e).__name__}: {e}. "
+                f"This model will not be available."
+            )
 
 
 # Registers default weights at startup.

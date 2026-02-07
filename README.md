@@ -29,6 +29,9 @@ Install PyTorch and torchvision.
 ```bash
 # Windows with CUDA-compatible GPU only
 python -m pip install "torch==2.7.0" torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# Windows: also required for SAM3 and SAM2 support
+python -m pip install triton-windows
 ```
 
 Install `samapi` and its dependencies.
@@ -57,6 +60,9 @@ python -m pip install -U git+https://github.com/ksugar/samapi.git
 ```bash
 curl -LsSf https://hf.co/cli/install.sh | bash
 ```
+
+> [!NOTE]
+> SAM3 access on Hugging Face is gated by Meta. To use SAM3, you must [request access](https://huggingface.co/facebook/sam3) to the model. However, since v0.7.1, the server can run without SAM3 using other models (SAM, SAM2, MobileSAM).
 
 ### Launch a server
 
@@ -107,6 +113,7 @@ set PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
 
 ### Known issues
 - SAM3 video predictor does not work with negative bbox prompts. See https://github.com/facebookresearch/sam3/issues/335.
+- If you do not have access to SAM3 on HuggingFace, the server will still start and work with other models (SAM, SAM2, MobileSAM), but SAM3-specific endpoints will return a 503 error.
 
 ### Request body
 
