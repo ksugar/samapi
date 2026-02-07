@@ -346,7 +346,18 @@ def _get_weights_at(p_model_dir: Path, remove_orphans: bool = True):
                 f"{p_json} is not found. {'Remove' if remove_orphans else 'Skip'} {p}."
             )
             if remove_orphans:
-                p.unlink()
+                try:
+                    if p.is_file():
+                        p.unlink()
+                    elif p.is_dir():
+                        shutil.rmtree(p)
+                    else:
+                        # fallback: attempt unlink and let exception be handled
+                        p.unlink()
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to remove orphan {p}: {type(e).__name__}: {e}"
+                    )
     return weights
 
 
