@@ -223,7 +223,7 @@ Returns the version of the SAM API.
 The version of the SAM API.
 
 ```plaintext
-0.7.0
+0.7.1
 ```
 
 #### Endpoint `/sam/weights/` (get)
@@ -300,6 +300,13 @@ The progress.
 | percent | Integer value in [0, 100].         |
 
 ## Updates
+
+### v0.7.1
+
+- The server can run without SAM3 using other models (SAM, SAM2, MobileSAM).
+- Update README to include instructions for getting access to SAM3.
+- Update the following dependencies to avoid building error on Windows:
+  - scikit-image: `^0.21.0` -> `^0.22.0`
 
 ### v0.7.0
 
