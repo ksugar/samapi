@@ -61,6 +61,9 @@ python -m pip install -U git+https://github.com/ksugar/samapi.git
 
 The following steps are required only when you want to use SAM3.
 
+### Request access to SAM3
+To use SAM3, you need to request access to the model on Hugging Face: https://huggingface.co/facebook/sam3. Generally, it takes on the order of tens of minutes to get access, though it may take longer in some cases.
+
 ### Login to Hugging Face (Optional: required for SAM3)
 
 You need to install the [Hugging Face CLI](https://huggingface.co/docs/huggingface-cli/index) and login to your Hugging Face account to access SAM3 weights.
