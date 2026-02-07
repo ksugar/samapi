@@ -14,7 +14,7 @@ mobile_sam = {git = "https://github.com/ksugar/MobileSAM.git"}
 geojson = "^3.0.1"
 pillow = "^11.3.0"
 numpy = "^1.23.5"
-scikit-image = "^0.21.0"
+scikit-image = "^0.22.0"
 shapely = "^2.0.1"
 torchvision = "^0.22.0"
 opencv-python = "^4.7.0.72"
