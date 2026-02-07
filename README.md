@@ -54,7 +54,7 @@ If you want to update the samapi server, run the following command in the conda 
 python -m pip install -U git+https://github.com/ksugar/samapi.git
 ```
 
-## Pre-requisites for SAM3
+## Pre-requisites for SAM3 (Optional: required only for using SAM3)
 
 > [!NOTE]
 > SAM3 access on Hugging Face is gated by Meta. To use SAM3, you must [request access](https://huggingface.co/facebook/sam3) to the model. However, since v0.7.1, the samapi server can still run without SAM3 using other models (SAM, SAM2, MobileSAM).
@@ -64,7 +64,7 @@ The following steps are required only when you want to use SAM3.
 ### Request access to SAM3
 To use SAM3, you need to request access to the model on Hugging Face: https://huggingface.co/facebook/sam3. Generally, it takes on the order of tens of minutes to get access, though it may take longer in some cases.
 
-### Login to Hugging Face (Optional: required for SAM3)
+### Login to Hugging Face
 
 You need to install the [Hugging Face CLI](https://huggingface.co/docs/huggingface-cli/index) and login to your Hugging Face account to access SAM3 weights.
 
