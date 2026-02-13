@@ -314,6 +314,7 @@ The progress.
 - Update README to include instructions for getting access to SAM3.
 - Update the following dependencies to avoid building error on Windows:
   - scikit-image: `^0.21.0` -> `^0.22.0`
+- Workaround for macOS. MPS backend is not supported for SAM3, but the server can still run with other models (SAM, SAM2, MobileSAM) using MPS.
 
 ### v0.7.0
 
