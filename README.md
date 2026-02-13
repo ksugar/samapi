@@ -100,6 +100,10 @@ Enter your token (input will not be visible):
 
 If you are asked to add the token to your Git credentials, you can choose `y`.
 
+```
+Add token as git credential? [y/N]: y
+```
+
 ## Usage
 
 ### Launch a server
