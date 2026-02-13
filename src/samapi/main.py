@@ -11,9 +11,14 @@ from io import TextIOWrapper
 import json
 import logging
 import os
+import sys
+
+# On macOS with MPS, enable PyTorch MPS CPU fallback for unsupported ops.
+# This must be set before any module that imports torch is loaded.
+if sys.platform == "darwin":
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 from pathlib import Path
 import shutil
-import sys
 import tempfile
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -648,7 +653,9 @@ async def predict_sam3(body: SAM3Body):
     global last_confidence_threshold
     if body.type != last_sam_type or body.checkpoint_url != last_checkpoint_url:
         predictor = sam_predictor_registry[body.type](
-            get_sam_model(body.type, body.checkpoint_url).to(device=device)
+            get_sam_model(body.type, body.checkpoint_url).to(
+                device="cpu" if device == "mps" else device
+            )
         )
         last_sam_type = body.type
         last_checkpoint_url = body.checkpoint_url
