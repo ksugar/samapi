@@ -536,11 +536,13 @@ class SAMBody(BaseModel):
     """
 
     type: Optional[ModelType] = ModelType.vit_h
-    bbox: Optional[Tuple[int, int, int, int]] = Field(example=(0, 0, 0, 0))
-    point_coords: Optional[Tuple[Tuple[int, int], ...]] = Field(
-        example=((0, 0), (1, 0))
+    bbox: Optional[Tuple[int, int, int, int]] = Field(
+        default=None, example=(0, 0, 0, 0)
     )
-    point_labels: Optional[Tuple[int, ...]] = Field(example=(0, 1))
+    point_coords: Optional[Tuple[Tuple[int, int], ...]] = Field(
+        default=None, example=((0, 0), (1, 0))
+    )
+    point_labels: Optional[Tuple[int, ...]] = Field(default=None, example=(0, 1))
     b64img: str
     b64mask: Optional[str] = None
     multimask_output: bool = False
