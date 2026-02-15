@@ -665,7 +665,7 @@ async def predict_sam3(body: SAM3Body):
         image = Image.open(io.BytesIO(image_data))
         # log image size and type
         logger.info(f"Image size: {image.size}, mode: {image.mode}")
-        inference_state = predictor.set_image(image)
+        inference_state = predictor.set_image(image, state=inference_state)
         last_image = body.b64img
     else:
         logger.info("Keeping the previous image!")
