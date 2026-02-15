@@ -29,6 +29,9 @@ Install PyTorch and torchvision.
 ```bash
 # Windows with CUDA-compatible GPU only
 python -m pip install "torch==2.7.0" torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# Windows: also required for SAM3 and SAM2 support
+python -m pip install triton-windows
 ```
 
 Install `samapi` and its dependencies.
@@ -51,12 +54,57 @@ If you want to update the samapi server, run the following command in the conda 
 python -m pip install -U git+https://github.com/ksugar/samapi.git
 ```
 
-## Usage
+## Pre-requisites for SAM3 (Optional: required only for using SAM3)
 
-### Login to Hugging Face (Optional: required for SAM3)
+> [!NOTE]
+> SAM3 access on Hugging Face is gated by Meta. To use SAM3, you must [request access](https://huggingface.co/facebook/sam3) to the model. However, since v0.7.1, the samapi server can still run without SAM3 using other models (SAM, SAM2, MobileSAM).
+
+The following steps are required only when you want to use SAM3.
+
+### Request access to SAM3
+To use SAM3, you need to request access to the model on Hugging Face: https://huggingface.co/facebook/sam3. Generally, it takes on the order of tens of minutes to get access, though it may take longer in some cases.
+
+### Login to Hugging Face
+
+You need to install the [Hugging Face CLI](https://huggingface.co/docs/huggingface-cli/index) and login to your Hugging Face account to access SAM3 weights.
+
+#### Install Hugging Face CLI on macOS and Linux:
 ```bash
 curl -LsSf https://hf.co/cli/install.sh | bash
 ```
+
+#### Install Hugging Face CLI on Windows (PowerShell):
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://hf.co/cli/install.ps1 | iex"
+```
+
+#### Login to Hugging Face:
+```bash
+hf auth login
+```
+
+Enter your token generated at https://huggingface.co/settings/tokens when prompted as follows:
+
+```powershell
+
+    _|    _|  _|    _|    _|_|_|    _|_|_|  _|_|_|  _|      _|    _|_|_|      _|_|_|_|    _|_|      _|_|_|  _|_|_|_|
+    _|    _|  _|    _|  _|        _|          _|    _|_|    _|  _|            _|        _|    _|  _|        _|
+    _|_|_|_|  _|    _|  _|  _|_|  _|  _|_|    _|    _|  _|  _|  _|  _|_|      _|_|_|    _|_|_|_|  _|        _|_|_|
+    _|    _|  _|    _|  _|    _|  _|    _|    _|    _|    _|_|  _|    _|      _|        _|    _|  _|        _|
+    _|    _|    _|_|      _|_|_|    _|_|_|  _|_|_|  _|      _|    _|_|_|      _|        _|    _|    _|_|_|  _|_|_|_|
+
+    To log in, `huggingface_hub` requires a token generated from https://huggingface.co/settings/tokens .
+Token can be pasted using 'Right-Click'.
+Enter your token (input will not be visible):
+```
+
+If you are asked to add the token to your Git credentials, you can choose `y`.
+
+```
+Add token as git credential? [y/N]: y
+```
+
+## Usage
 
 ### Launch a server
 
@@ -107,6 +155,7 @@ set PIL_MAX_IMAGE_PIXELS="" # or specific value (integer)
 
 ### Known issues
 - SAM3 video predictor does not work with negative bbox prompts. See https://github.com/facebookresearch/sam3/issues/335.
+- If you do not have access to SAM3 on HuggingFace, the server will still start and work with other models (SAM, SAM2, MobileSAM), but SAM3-specific endpoints will return a 503 error.
 
 ### Request body
 
@@ -181,7 +230,7 @@ Returns the version of the SAM API.
 The version of the SAM API.
 
 ```plaintext
-0.7.0
+0.7.1
 ```
 
 #### Endpoint `/sam/weights/` (get)
@@ -258,6 +307,14 @@ The progress.
 | percent | Integer value in [0, 100].         |
 
 ## Updates
+
+### v0.7.1
+
+- The server can run without SAM3 using other models (SAM, SAM2, MobileSAM).
+- Update README to include instructions for getting access to SAM3.
+- Update the following dependencies to avoid building error on Windows:
+  - scikit-image: `^0.21.0` -> `^0.22.0`
+- Workaround for macOS. MPS backend is not supported for SAM3, but the server can still run with other models (SAM, SAM2, MobileSAM) using MPS.
 
 ### v0.7.0
 
